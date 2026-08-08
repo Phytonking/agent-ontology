@@ -1,0 +1,45 @@
+{
+  "name": "ontolayer",
+  "version": "0.1.0",
+  "description": "Filesystem-first, agent-editable ontology framework. Point any MCP agent at a folder of markdown files; it reads, understands, and edits the ontology.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "ontology": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "spec",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ontology",
+    "agent",
+    "mcp",
+    "knowledge-graph",
+    "llm",
+    "neuro-symbolic"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.0",
+    "commander": "^12.1.0",
+    "gray-matter": "^4.0.3",
+    "yaml": "^2.5.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
