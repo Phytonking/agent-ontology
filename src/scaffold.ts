@@ -112,7 +112,12 @@ export function init(root: string) {
     description:
       "An order a customer placed. Refunded at most once; a payout goes to the buyer, never the support rep.",
     properties: {
-      status: { type: "enum", values: ["paid", "shipped", "refunded"], required: true },
+      status: {
+        type: "enum",
+        values: ["paid", "shipped", "refunded"],
+        required: true,
+        transitions: { paid: ["shipped", "refunded"], shipped: ["refunded"], refunded: [] },
+      },
       total: { type: "money" },
       placed_at: { type: "datetime" },
       customer_id: { type: "id" },
@@ -133,11 +138,12 @@ export function init(root: string) {
   createAction(root, {
     name: "issue_refund",
     description: "Refund an order. Only once per order, and only if it is paid or shipped.",
+    on: "Order",
     inputs: {
       order_id: { type: "id", required: true },
       amount: { type: "money" },
     },
-    preconditions: ["order.status in [paid, shipped]", "refund at_most_once"],
-    effects: ["set order.status = refunded"],
+    preconditions: ["status in [paid, shipped]"],
+    effects: ["set status = refunded"],
   });
 }

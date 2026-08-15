@@ -5,6 +5,7 @@ import * as onto from "./ontology.js";
 import { ConstraintSchema, LinkSchema, ParamSchema } from "./types.js";
 import { Dataset, openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
+import { runAction } from "./data/actions.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -228,6 +229,19 @@ export function buildServer(root: string, version: string): McpServer {
     async ({ type, id, link, scope }) => {
       try {
         return text(await data.traverse(type, id, link, scope));
+      } catch (e) {
+        return fail(e);
+      }
+    }
+  );
+
+  server.tool(
+    "run_action",
+    "Execute a validated action (checks inputs, preconditions, state transitions, then applies effects).",
+    { action: z.string(), args: z.record(z.any()).optional(), scope: z.string().optional() },
+    async ({ action, args, scope }) => {
+      try {
+        return text(await runAction(root, action, args ?? {}, scope));
       } catch (e) {
         return fail(e);
       }

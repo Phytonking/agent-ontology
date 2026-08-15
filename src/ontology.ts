@@ -153,6 +153,7 @@ export function readAction(root: string, name: string) {
 export interface CreateActionInput {
   name: string;
   description?: string;
+  on?: string;
   inputs?: Record<string, Param>;
   preconditions?: string[];
   effects?: string[];
@@ -167,6 +168,7 @@ export function createAction(root: string, input: CreateActionInput) {
   const fm = {
     action: input.name,
     ...(input.description ? { description: input.description } : {}),
+    ...(input.on ? { on: input.on } : {}),
     ...(input.inputs ? { inputs: input.inputs } : {}),
     ...(input.preconditions ? { preconditions: input.preconditions } : {}),
     ...(input.effects ? { effects: input.effects } : {}),
