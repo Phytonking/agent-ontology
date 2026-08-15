@@ -8,6 +8,7 @@ import { serve } from "./mcp.js";
 import { validate } from "./ontology.js";
 import { openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
+import { materialize } from "./data/materialize.js";
 
 const VERSION = "0.1.0";
 
@@ -60,6 +61,19 @@ program
     }
     if (problems.length === 0) console.log("OK — no problems.");
     process.exit(ok ? 0 : 1);
+  });
+
+program
+  .command("materialize")
+  .argument("[dir]", "ontology directory", ".")
+  .description("Ingest all data/*.yaml files into the backing store. Idempotent.")
+  .action(async (dir: string) => {
+    const root = path.resolve(dir);
+    const store = openStore(root);
+    const r = await materialize(root, store);
+    store.close();
+    console.log(JSON.stringify(r, null, 2));
+    if (r.errors.length) process.exit(1);
   });
 
 program

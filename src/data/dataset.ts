@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { load } from "../loader.js";
 import { checkConstraints, checkPropertyConstraints } from "../validator.js";
 import { checkTransition, transitiveClosure, symmetricTargets } from "../infer.js";
+import { writeInstanceFile } from "./materialize.js";
 import type { Param, TypeDoc } from "../types.js";
 import type { Rec } from "./record.js";
 import { SqliteStore } from "./sqlite-store.js";
@@ -118,7 +119,10 @@ export class Dataset {
       if (hits.length) throw new Error(`unique conflict on ${c.label}: already used by ${input.type}/${hits[0]._id}`);
     }
 
-    return this.store.upsert({ type: input.type, id, scope, data: input.data });
+    const rec = await this.store.upsert({ type: input.type, id, scope, data: input.data });
+    // Write-back: keep the file as source of truth so git tracks every data change.
+    writeInstanceFile(this.root, input.type, id, input.data, scope);
+    return rec;
   }
 
   get(type: string, id: string, scope?: string): Promise<Rec | null> {

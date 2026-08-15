@@ -8,7 +8,10 @@ export function paths(root: string) {
     readme: path.join(root, "README.md"),
     typesDir: path.join(root, "types"),
     actionsDir: path.join(root, "actions"),
+    dataDir: path.join(root, "data"),
     typeFile: (name: string) => path.join(root, "types", `${name}.md`),
     actionFile: (name: string) => path.join(root, "actions", `${name}.md`),
+    instanceDir: (type: string) => path.join(root, "data", type),
+    instanceFile: (type: string, id: string) => path.join(root, "data", type, `${id}.yaml`),
   };
 }

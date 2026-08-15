@@ -7,6 +7,7 @@ import { ConstraintSchema, LinkSchema, ParamSchema, type Param } from "./types.j
 import { Dataset, openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
 import { runAction } from "./data/actions.js";
+import { materialize, watchAndMaterialize } from "./data/materialize.js";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -194,11 +195,23 @@ export function buildServer(root: string, version: string): McpServer {
 
 export async function serve(root: string, version: string): Promise<void> {
   const server = buildServer(root, version);
+  const dataset = new Dataset(root);
+
+  // Materialize any existing data/ files into the store before accepting connections.
+  const boot = await materialize(root, dataset.store);
+  if (boot.ingested > 0 || boot.errors.length > 0)
+    console.error(`ontolayer materialize: ${boot.ingested} ingested, ${boot.errors.length} errors`);
+
+  // Watch data/ for edits and re-materialize automatically.
+  watchAndMaterialize(root, dataset.store, (r) => {
+    if (r.ingested > 0) console.error(`ontolayer watch: ${r.ingested} updated`);
+    if (r.errors.length) console.error(`ontolayer watch errors: ${JSON.stringify(r.errors)}`);
+  });
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(`ontolayer MCP server serving '${root}'`);
   const model = load(root);
-  if (model.actions.size > 0) {
+  if (model.actions.size > 0)
     console.error(`  dynamic tools: ${[...model.actions.keys()].join(", ")}`);
-  }
 }

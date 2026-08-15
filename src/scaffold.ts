@@ -44,6 +44,8 @@ export function init(root: string) {
   fs.writeFileSync(p.readme, README);
   // definitions -> git, data -> the store: keep instance data and secrets out of git.
   const gitignore = path.join(root, ".gitignore");
+  // data/ (instance YAML files) is committed — files are the source of truth.
+  // .ontology/ (the SQLite index) is gitignored — it's derived from the files.
   fs.writeFileSync(gitignore, ".ontology/\n.env\n");
 
   ensureRepo(root);
