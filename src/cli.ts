@@ -9,6 +9,7 @@ import { validate } from "./ontology.js";
 import { openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
 import { materialize } from "./data/materialize.js";
+import { doctor } from "./data/resolver.js";
 
 const VERSION = "0.1.0";
 
@@ -74,6 +75,14 @@ program
     store.close();
     console.log(JSON.stringify(r, null, 2));
     if (r.errors.length) process.exit(1);
+  });
+
+program
+  .command("doctor")
+  .argument("[dir]", "ontology directory", ".")
+  .description("Test connections to all configured stores and blob backends.")
+  .action(async (dir: string) => {
+    await doctor(path.resolve(dir));
   });
 
 program
