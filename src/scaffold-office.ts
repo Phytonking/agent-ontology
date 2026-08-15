@@ -202,9 +202,9 @@ export function initOffice(root: string): void {
         transitions: {
           backlog: ["assigned", "failed"],
           assigned: ["in_progress", "backlog", "failed"],
-          in_progress: ["review", "blocked", "failed"],
-          review: ["done", "in_progress"],
-          blocked: ["in_progress", "failed"],
+          in_progress: ["review", "blocked", "backlog", "failed"],
+          review: ["done", "in_progress", "backlog"],
+          blocked: ["in_progress", "backlog", "failed"],
           done: [],
           failed: [],
         },
@@ -250,10 +250,10 @@ export function initOffice(root: string): void {
 
   createAction(root, {
     name: "start_task",
-    description: "Agent picks up an assigned task and begins work.",
+    description: "Agent picks up an assigned or unblocked task and begins work.",
     on: "Task",
     inputs: { task_id: { type: "id", required: true } },
-    preconditions: ["status in [assigned]"],
+    preconditions: ["status in [assigned, blocked]"],
     effects: ["set status = in_progress"],
   });
 
