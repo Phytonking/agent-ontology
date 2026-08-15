@@ -3,6 +3,7 @@ import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
 import { init } from "./scaffold.js";
+import { initOffice } from "./scaffold-office.js";
 import { serve } from "./mcp.js";
 import { validate } from "./ontology.js";
 import { openStore } from "./data/dataset.js";
@@ -19,12 +20,18 @@ program
 program
   .command("init")
   .argument("[dir]", "target directory", ".")
-  .description("Scaffold a new ontology folder (types, actions, example, git).")
-  .action((dir: string) => {
+  .option("--template <name>", "scaffold template: ecommerce (default) | office", "ecommerce")
+  .description("Scaffold a new ontology folder.")
+  .action((dir: string, opts: { template: string }) => {
     const root = path.resolve(dir);
     fs.mkdirSync(root, { recursive: true });
-    init(root);
-    console.log(`Initialized ontology at ${root}`);
+    if (opts.template === "office") {
+      initOffice(root);
+      console.log(`Initialized agent-office ontology at ${root}`);
+    } else {
+      init(root);
+      console.log(`Initialized ontology at ${root}`);
+    }
     console.log(`Next: ontology serve ${dir}   (then point an MCP agent at it)`);
   });
 
