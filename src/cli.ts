@@ -5,6 +5,8 @@ import path from "node:path";
 import { init } from "./scaffold.js";
 import { serve } from "./mcp.js";
 import { validate } from "./ontology.js";
+import { openStore } from "./data/dataset.js";
+import { syncBidirectional } from "./data/sync.js";
 
 const VERSION = "0.1.0";
 
@@ -51,6 +53,21 @@ program
     }
     if (problems.length === 0) console.log("OK — no problems.");
     process.exit(ok ? 0 : 1);
+  });
+
+program
+  .command("sync")
+  .argument("<a>", "first ontology directory")
+  .argument("<b>", "second ontology directory")
+  .option("--type <type...>", "limit sync to these types")
+  .description("Sync instance data between two ontologies (bidirectional, incremental).")
+  .action(async (a: string, b: string, opts: { type?: string[] }) => {
+    const sa = openStore(path.resolve(a));
+    const sb = openStore(path.resolve(b));
+    const res = await syncBidirectional(sa, sb, { types: opts.type });
+    sa.close();
+    sb.close();
+    console.log(JSON.stringify(res, null, 2));
   });
 
 program.parseAsync();

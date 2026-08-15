@@ -63,6 +63,7 @@ export function readType(root: string, name: string) {
 export interface CreateTypeInput {
   name: string;
   description?: string;
+  keys?: string[];
   properties?: Record<string, Param>;
   links?: Record<string, Link>;
   constraints?: Constraint[];
@@ -76,6 +77,7 @@ export function createType(root: string, input: CreateTypeInput) {
 
   const fm = {
     type: input.name,
+    ...(input.keys ? { keys: input.keys } : {}),
     ...(input.properties ? { properties: input.properties } : {}),
     ...(input.links ? { links: input.links } : {}),
     ...(input.constraints ? { constraints: input.constraints } : {}),

@@ -32,25 +32,42 @@ markdown body (the human- and agent-readable meaning).
 ---
 type: Order                    # required, matches /^[A-Za-z][A-Za-z0-9_]*$/
 extends: BaseEntity            # optional, single inheritance (must exist)
+label: Customer Order          # optional, human-friendly name
+keys: [order_no]               # optional, natural key (uniqueness + upsert)
 properties:
+  order_no:
+    type: string
+    unique: true               # no two Orders share it (per scope)
   status:
     type: enum                 # see "Property types"
     values: [paid, shipped, refunded]   # required when type is enum
     required: true
   total:
     type: money
+  customer_id:
+    type: id
+  tags:
+    type: string
+    many: true                 # multi-valued (an array)
 links:
-  placed_by:
+  placed_by:                   # N:1 — the fk lives on THIS record
     to: Customer               # must be an existing type
     cardinality: one           # one | many  (default: one)
+    via: customer_id           # field on this record holding the target id
+    inverse: orders            # reciprocal link on Customer (Customer.orders)
+  items:                       # N:M — through a join type
+    to: Product
+    cardinality: many
+    through: OrderItem
+    through_from: order_id      # field on OrderItem referencing this Order
+    through_to: product_id      # field on OrderItem referencing the Product
 constraints:
   - { kind: disjoint, a: Customer, b: SupportRep }
   - { kind: at_most_once, of: refund }
 ---
 # Order
-Prose: what an Order means, examples, edge cases, ideas. This is what an agent
-reads to understand the concept — write it for a smart reader who knows nothing
-about your business.
+Prose: what an Order means, examples, edge cases, ideas. Write it for a smart
+reader who knows nothing about your business.
 ```
 
 ### Property types
@@ -58,8 +75,44 @@ about your business.
 `string`, `text`, `int`, `float`, `bool`, `money`, `datetime`, `date`, `id`,
 `json`, `enum`.
 
-`enum` requires a non-empty `values` list. Every property may set
-`required: true` and a `description`.
+`enum` requires a non-empty `values` list. Every property may also set:
+
+- `required: true` — must be present;
+- `many: true` — multi-valued (an array of `type`);
+- `unique: true` — no two instances share this value (per scope);
+- `deprecated: true`, `label`, `description` — metadata.
+
+A type may declare `keys: [field, ...]` — its **natural key**. A write whose key
+matches an existing instance updates it (upsert); a colliding key on a different
+instance is rejected.
+
+### Relationships (links)
+
+A link is a directed edge to another type. `cardinality` is the target
+multiplicity *from this side*; paired with the reciprocal link (`inverse`) it
+expresses the full matrix:
+
+| this side | inverse side | relationship | where the foreign key lives |
+|---|---|---|---|
+| `one` | `one` | one-to-one (1:1) | `via` on either record |
+| `one` | `many` | many-to-one (N:1) | `via` on **this** record |
+| `many` | `one` | one-to-many (1:N) | `via` on the **target** record |
+| `many` | `many` | many-to-many (N:M) | a `through` join type |
+
+Fields:
+
+- `to` — target type (must exist).
+- `cardinality` — `one` | `many` (default `one`).
+- `via` — the foreign-key field. On **this** record for `one`; on the **target**
+  record for `many` (1:N).
+- `inverse` — name of the reciprocal link on `to`; enables traversal both ways.
+- `through` / `through_from` / `through_to` — for N:M: the join type and the two
+  fields on it referencing this type and the target.
+- `deprecated`, `description` — metadata.
+
+Traversal resolves each shape automatically: `one` follows `via` on the record;
+`many` (1:N) queries the target by `via`; `many` (N:M) walks the `through` join.
+Any type may declare a plethora of links to many other types.
 
 ### Constraints
 
@@ -99,6 +152,10 @@ version, when actions gain real side effects).
 
 - every `links.*.to` references an existing type (error);
 - `extends` references an existing type (error);
+- each `keys` entry is a declared property (error);
+- many-to-many links declare `through`, `through_from`, `through_to` (error);
+- `inverse` names a reciprocal link that points back (warning);
+- links to a `deprecated` type (warning);
 - `disjoint` references existing types (warning);
 - every file's frontmatter matches the shapes above (error).
 

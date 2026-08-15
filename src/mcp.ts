@@ -3,6 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import * as onto from "./ontology.js";
 import { ConstraintSchema, LinkSchema, ParamSchema } from "./types.js";
+import { Dataset, openStore } from "./data/dataset.js";
+import { syncBidirectional } from "./data/sync.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -22,6 +24,7 @@ function fail(e: unknown): ToolResult {
 /** Build the MCP server exposing read + edit tools over an ontology folder. */
 export function buildServer(root: string, version: string): McpServer {
   const server = new McpServer({ name: "ontolayer", version });
+  const data = new Dataset(root);
 
   server.tool("list_types", "List all ontology types with their properties, links, and constraint counts.", {}, async () => {
     try {
@@ -50,6 +53,7 @@ export function buildServer(root: string, version: string): McpServer {
     {
       name: z.string(),
       description: z.string().optional(),
+      keys: z.array(z.string()).optional(),
       properties: z.record(ParamSchema).optional(),
       links: z.record(LinkSchema).optional(),
       constraints: z.array(ConstraintSchema).optional(),
@@ -162,6 +166,89 @@ export function buildServer(root: string, version: string): McpServer {
       return fail(e);
     }
   });
+
+  // ---- data layer (M2) ----
+
+  server.tool(
+    "put",
+    "Create or update an instance of a type (validated against its schema).",
+    { type: z.string(), id: z.string().optional(), scope: z.string().optional(), data: z.record(z.any()) },
+    async ({ type, id, scope, data: d }) => {
+      try {
+        return text(await data.put({ type, id, scope, data: d }));
+      } catch (e) {
+        return fail(e);
+      }
+    }
+  );
+
+  server.tool(
+    "get",
+    "Fetch one instance by type and id.",
+    { type: z.string(), id: z.string(), scope: z.string().optional() },
+    async ({ type, id, scope }) => {
+      try {
+        return text(await data.get(type, id, scope));
+      } catch (e) {
+        return fail(e);
+      }
+    }
+  );
+
+  server.tool(
+    "query",
+    "List instances of a type, optionally filtered by exact field matches.",
+    { type: z.string(), filter: z.record(z.any()).optional(), scope: z.string().optional() },
+    async ({ type, filter, scope }) => {
+      try {
+        return text(await data.query(type, filter, scope));
+      } catch (e) {
+        return fail(e);
+      }
+    }
+  );
+
+  server.tool(
+    "search",
+    "Keyword search over instances of a type.",
+    { type: z.string(), q: z.string(), scope: z.string().optional() },
+    async ({ type, q, scope }) => {
+      try {
+        return text(await data.search(type, q, scope));
+      } catch (e) {
+        return fail(e);
+      }
+    }
+  );
+
+  server.tool(
+    "traverse",
+    "Follow a link from one instance to related instances.",
+    { type: z.string(), id: z.string(), link: z.string(), scope: z.string().optional() },
+    async ({ type, id, link, scope }) => {
+      try {
+        return text(await data.traverse(type, id, link, scope));
+      } catch (e) {
+        return fail(e);
+      }
+    }
+  );
+
+  server.tool(
+    "sync",
+    "Sync instance data with a peer ontology folder (bidirectional, incremental).",
+    { peer: z.string(), types: z.array(z.string()).optional() },
+    async ({ peer, types }) => {
+      try {
+        const b = openStore(peer);
+        const res = await syncBidirectional(data.store, b, { types });
+        b.close();
+        return text(res);
+      } catch (e) {
+        return fail(e);
+      }
+    }
+  );
 
   return server;
 }
