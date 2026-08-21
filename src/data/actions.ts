@@ -34,14 +34,16 @@ export async function runAction(
   root: string,
   name: string,
   args: Record<string, unknown>,
-  scope = "shared"
+  scope = "shared",
+  sharedDataset?: Dataset
 ): Promise<ActionResult> {
   const model = load(root);
   const actionDoc = model.actions.get(name);
   if (!actionDoc) return { action: name, status: "rejected", reason: `action '${name}' not found` };
 
   const fm = actionDoc.frontmatter;
-  const dataset = new Dataset(root);
+  const dataset = sharedDataset ?? new Dataset(root);
+  const ownsDataset = !sharedDataset;
 
   try {
     // 1. Validate inputs
@@ -112,6 +114,6 @@ export async function runAction(
     const result = await dataset.put({ type: targetType, id: targetId ?? undefined, scope, data: newData });
     return { action: name, status: "ok", record: result };
   } finally {
-    dataset.close();
+    if (ownsDataset) dataset.close();
   }
 }

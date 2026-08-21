@@ -103,6 +103,24 @@ export const ActionFrontmatter = z.object({
 });
 export type ActionFrontmatter = z.infer<typeof ActionFrontmatter>;
 
+/**
+ * A connector definition. Connectors ingest data from an external source and
+ * upsert it into the ontology. Core ships the framework, not specific connectors:
+ * `kind` maps to a registered implementation, or `module` points to one to load.
+ */
+export const ConnectorFrontmatter = z.object({
+  connector: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/, "connector name must be alphanumeric/underscore/dash"),
+  kind: z.string(),
+  description: z.string().optional(),
+  /** Path (relative to the ontology root) to a module exporting the connector implementation. */
+  module: z.string().optional(),
+  /** Non-secret source configuration. Secrets come from env, referenced by name. */
+  config: z.record(z.any()).optional(),
+  /** Optional cron hint. Core does not schedule; a host may read this to schedule runs. */
+  schedule: z.string().optional(),
+});
+export type ConnectorFrontmatter = z.infer<typeof ConnectorFrontmatter>;
+
 export const OntologyConfig = z.object({
   name: z.string(),
   version: z.string().default("0.1.0"),
@@ -112,11 +130,13 @@ export type OntologyConfig = z.infer<typeof OntologyConfig>;
 
 export interface TypeDoc { name: string; frontmatter: TypeFrontmatter; body: string; file: string; }
 export interface ActionDoc { name: string; frontmatter: ActionFrontmatter; body: string; file: string; }
+export interface ConnectorDoc { name: string; frontmatter: ConnectorFrontmatter; body: string; file: string; }
 export interface Problem { level: "error" | "warning"; where: string; message: string; }
 export interface OntologyModel {
   root: string;
   config: OntologyConfig;
   types: Map<string, TypeDoc>;
   actions: Map<string, ActionDoc>;
+  connectors: Map<string, ConnectorDoc>;
   problems: Problem[];
 }

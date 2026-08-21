@@ -144,9 +144,62 @@ effects:
 Prose: what this action does and when to use it.
 ```
 
-`inputs` use the same typed-field shape as properties. `preconditions` and
-`effects` are string lists in v0 (they become structured + executable in a later
-version, when actions gain real side effects).
+`inputs` use the same typed-field shape as properties. When an action declares
+`on: <Type>` and an id-shaped input, `run_action` loads the target record,
+checks `preconditions` (including enum state transitions), applies `effects`
+(`set <field> = <value>`) as a validated write, and appends to the oplog — no
+side effect unless valid. Every action is also exposed as its own MCP tool.
+
+## Connector files
+
+Connectors ingest data from external sources into the ontology. The core ships
+the **framework**, not specific connectors — you make, add, and link them as needed.
+
+```markdown
+---
+connector: slack-threads       # required, matches /^[A-Za-z][A-Za-z0-9_-]*$/
+kind: custom                   # a registered kind, or "custom" + a module
+module: connectors/impl/slack.mjs   # JS module exporting the implementation
+config:                        # non-secret config; secrets come from env
+  channel: C0123
+schedule: "*/5 * * * *"        # optional cron hint (core does not schedule)
+---
+# slack-threads
+What this connector ingests and how it maps to types.
+```
+
+Resolution when running (`run_connector` / `ontology run-connector`):
+
+1. If `module` is set, it is dynamically imported. The module default-exports a
+   `Connector` (`{ sync(ctx) }`) or a factory `(def) => Connector`.
+2. Otherwise `kind` is looked up in the in-process registry
+   (`registerConnector(kind, factory)`).
+
+The connector's `sync(ctx)` receives a `ConnectorContext` — `ctx.upsert(type, id,
+data)` writes through the full pipeline (validation + `data/` file write-back +
+oplog), `ctx.config` is the non-secret config, and `ctx.env(key)` reads secrets.
+Because writes go through the dataset, a connector cannot introduce invalid data.
+
+## Backing stores and blobs (config)
+
+`ontology.config.yaml` may declare named stores and blob backends. Structure is
+committed; credentials come from the environment by convention.
+
+```yaml
+stores:
+  local: { kind: sqlite }              # default, zero-config
+  main:  { kind: postgres }            # URL from ONTOLAYER_STORE_MAIN_URL
+blobs:
+  files: { kind: s3, bucket: my-bucket }   # keys from ONTOLAYER_BLOB_FILES_*
+  # Cloudflare R2: add endpoint + region: auto
+defaults:
+  store: local
+  blob: files
+```
+
+Env convention: `ONTOLAYER_STORE_<NAME>_URL`, `ONTOLAYER_BLOB_<NAME>_{ACCESS_KEY,
+SECRET_KEY,BUCKET,REGION,ENDPOINT,PUBLIC_URL}`. `ontology doctor` tests each.
+Adapters load lazily — `pg` / `@aws-sdk` are only imported when configured.
 
 ## Coherence rules (checked by `validate`)
 

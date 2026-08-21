@@ -6,6 +6,7 @@ import { checkTransition, transitiveClosure, symmetricTargets } from "../infer.j
 import { writeInstanceFile } from "./materialize.js";
 import type { Param, TypeDoc } from "../types.js";
 import type { Rec } from "./record.js";
+import type { Store } from "./store.js";
 import { SqliteStore } from "./sqlite-store.js";
 
 export interface InstanceProblem { field: string; message: string; }
@@ -58,12 +59,28 @@ export function openStore(root: string): SqliteStore {
 
 export class Dataset {
   readonly root: string;
-  readonly store: SqliteStore;
+  readonly store: Store;
 
-  constructor(root: string) {
+  /**
+   * Construct a dataset. With no `store`, defaults to the local SQLite index
+   * (zero-config). Pass a resolved store (e.g. Postgres) or use `Dataset.open`
+   * to honor the backend configured in ontology.config.yaml.
+   */
+  constructor(root: string, store?: Store) {
     this.root = root;
-    const model = load(root);
-    this.store = new SqliteStore(path.join(root, ".ontology", "data.db"), model.config.name);
+    if (store) {
+      this.store = store;
+    } else {
+      const model = load(root);
+      this.store = new SqliteStore(path.join(root, ".ontology", "data.db"), model.config.name);
+    }
+  }
+
+  /** Open a dataset using the store configured in ontology.config.yaml (SQLite default). */
+  static async open(root: string): Promise<Dataset> {
+    const { openNamedStore } = await import("./resolver.js");
+    const store = await openNamedStore(root);
+    return new Dataset(root, store);
   }
 
   private typeDoc(name: string): TypeDoc {

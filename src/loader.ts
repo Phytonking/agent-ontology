@@ -5,10 +5,12 @@ import YAML from "yaml";
 import { paths } from "./paths.js";
 import {
   ActionFrontmatter,
+  ConnectorFrontmatter,
   OntologyConfig,
   SPEC_VERSION,
   TypeFrontmatter,
   type ActionDoc,
+  type ConnectorDoc,
   type OntologyModel,
   type Problem,
   type TypeDoc,
@@ -74,5 +76,16 @@ export function load(root: string): OntologyModel {
     }
   }
 
-  return { root, config, types, actions, problems };
+  const connectors = new Map<string, ConnectorDoc>();
+  for (const file of listMd(p.connectorsDir)) {
+    const raw = matter(fs.readFileSync(file, "utf8"));
+    const parsed = ConnectorFrontmatter.safeParse(raw.data);
+    if (parsed.success) {
+      connectors.set(parsed.data.connector, { name: parsed.data.connector, frontmatter: parsed.data, body: raw.content, file });
+    } else {
+      problems.push(issues(root, file, parsed.error));
+    }
+  }
+
+  return { root, config, types, actions, connectors, problems };
 }

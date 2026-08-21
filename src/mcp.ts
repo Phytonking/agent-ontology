@@ -8,6 +8,7 @@ import { Dataset, openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
 import { runAction } from "./data/actions.js";
 import { materialize, watchAndMaterialize } from "./data/materialize.js";
+import { runConnector } from "./connectors/run.js";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -53,7 +54,7 @@ function paramToZod(spec: Param): z.ZodTypeAny {
  * The tool name = action name. Inputs come from the action's `inputs` frontmatter.
  * Agents see every domain action as a direct callable tool — no generic run_action wrapper.
  */
-function registerActionTools(server: McpServer, root: string): void {
+function registerActionTools(server: McpServer, root: string, data: Dataset): void {
   const model = load(root);
   for (const action of model.actions.values()) {
     const fm = action.frontmatter;
@@ -71,7 +72,7 @@ function registerActionTools(server: McpServer, root: string): void {
       async (args) => {
         const { scope, ...actionArgs } = args as Record<string, unknown>;
         try {
-          return text(await runAction(root, fm.action, actionArgs, typeof scope === "string" ? scope : undefined));
+          return text(await runAction(root, fm.action, actionArgs, typeof scope === "string" ? scope : undefined, data));
         } catch (e) {
           return fail(e);
         }
@@ -80,10 +81,14 @@ function registerActionTools(server: McpServer, root: string): void {
   }
 }
 
-/** Build the MCP server. Static ontology-management tools + dynamic action tools. */
-export function buildServer(root: string, version: string): McpServer {
+/**
+ * Build the MCP server. Static ontology-management tools + dynamic action tools.
+ * Pass a resolved dataset (from Dataset.open) to use the configured backend;
+ * otherwise defaults to the local SQLite index.
+ */
+export function buildServer(root: string, version: string, dataset?: Dataset): McpServer {
   const server = new McpServer({ name: "ontolayer", version });
-  const data = new Dataset(root);
+  const data = dataset ?? new Dataset(root);
 
   // ---- ontology management (static) ----
 
@@ -170,8 +175,32 @@ export function buildServer(root: string, version: string): McpServer {
     "Execute any action by name with arbitrary args. Use the action's own named tool instead when available.",
     { action: z.string(), args: z.record(z.any()).optional(), scope: z.string().optional() },
     async ({ action, args, scope }) => {
-      try { return text(await runAction(root, action, args ?? {}, scope)); } catch (e) { return fail(e); }
+      try { return text(await runAction(root, action, args ?? {}, scope, data)); } catch (e) { return fail(e); }
     }
+  );
+
+  // ---- connectors ----
+
+  server.tool("list_connectors", "List all defined connectors (external data sources).", {}, async () => {
+    try { return text(onto.listConnectors(root)); } catch (e) { return fail(e); }
+  });
+
+  server.tool("read_connector", "Read a connector definition.", { name: z.string() }, async ({ name }) => {
+    try { return text(onto.readConnector(root, name)); } catch (e) { return fail(e); }
+  });
+
+  server.tool(
+    "create_connector",
+    "Define a new connector. `kind` maps to a registered implementation, or set `module` to a JS module path to link a custom one.",
+    { name: z.string(), kind: z.string(), description: z.string().optional(), module: z.string().optional(), config: z.record(z.any()).optional(), schedule: z.string().optional() },
+    async (args) => { try { return text(onto.createConnector(root, args)); } catch (e) { return fail(e); } }
+  );
+
+  server.tool(
+    "run_connector",
+    "Run a connector: pulls from its source and upserts mapped records into the ontology.",
+    { name: z.string() },
+    async ({ name }) => { try { return text(await runConnector(root, name, data)); } catch (e) { return fail(e); } }
   );
 
   server.tool(
@@ -188,14 +217,15 @@ export function buildServer(root: string, version: string): McpServer {
   );
 
   // ---- dynamic action tools (one per actions/*.md) ----
-  registerActionTools(server, root);
+  registerActionTools(server, root, data);
 
   return server;
 }
 
 export async function serve(root: string, version: string): Promise<void> {
-  const server = buildServer(root, version);
-  const dataset = new Dataset(root);
+  // Resolve the configured backend (SQLite by default, Postgres if configured).
+  const dataset = await Dataset.open(root);
+  const server = buildServer(root, version, dataset);
 
   // Materialize any existing data/ files into the store before accepting connections.
   const boot = await materialize(root, dataset.store);
@@ -213,5 +243,7 @@ export async function serve(root: string, version: string): Promise<void> {
   console.error(`ontolayer MCP server serving '${root}'`);
   const model = load(root);
   if (model.actions.size > 0)
-    console.error(`  dynamic tools: ${[...model.actions.keys()].join(", ")}`);
+    console.error(`  dynamic action tools: ${[...model.actions.keys()].join(", ")}`);
+  if (model.connectors.size > 0)
+    console.error(`  connectors: ${[...model.connectors.keys()].join(", ")}`);
 }

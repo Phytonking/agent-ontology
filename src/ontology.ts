@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { paths } from "./paths.js";
-import { renderType, renderAction } from "./serialize.js";
+import { renderType, renderAction, renderConnector } from "./serialize.js";
 import { load } from "./loader.js";
 import { validate as validateModel } from "./validator.js";
 import { commit } from "./git.js";
 import {
   ActionFrontmatter,
+  ConnectorFrontmatter,
   ConstraintSchema,
   LinkSchema,
   ParamSchema,
@@ -24,6 +25,7 @@ function ensureDirs(root: string) {
   const p = paths(root);
   fs.mkdirSync(p.typesDir, { recursive: true });
   fs.mkdirSync(p.actionsDir, { recursive: true });
+  fs.mkdirSync(p.connectorsDir, { recursive: true });
 }
 
 /** Validate frontmatter shape, then write the type file. Throws on invalid shape. */
@@ -177,6 +179,55 @@ export function createAction(root: string, input: CreateActionInput) {
   const body = `# ${input.name}\n\n${input.description ?? "TODO: describe what this action does."}`;
   fs.writeFileSync(file, renderAction(parsed, body));
   const c = commit(root, [file], `create action ${input.name}`);
+  return { created: input.name, file: path.relative(root, file), ...c };
+}
+
+// ---- read + edit: connectors ----
+
+export function listConnectors(root: string) {
+  const model = load(root);
+  return [...model.connectors.values()].map((c) => ({
+    name: c.name,
+    kind: c.frontmatter.kind,
+    description: c.frontmatter.description ?? "",
+    module: c.frontmatter.module,
+  }));
+}
+
+export function readConnector(root: string, name: string) {
+  const file = paths(root).connectorFile(name);
+  if (!fs.existsSync(file)) throw new Error(`connector '${name}' not found`);
+  const raw = matter(fs.readFileSync(file, "utf8"));
+  return { name, frontmatter: raw.data, body: raw.content, file: path.relative(root, file) };
+}
+
+export interface CreateConnectorInput {
+  name: string;
+  kind: string;
+  description?: string;
+  module?: string;
+  config?: Record<string, unknown>;
+  schedule?: string;
+}
+
+export function createConnector(root: string, input: CreateConnectorInput) {
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(input.name)) throw new Error(`invalid connector name '${input.name}'`);
+  ensureDirs(root);
+  const file = paths(root).connectorFile(input.name);
+  if (fs.existsSync(file)) throw new Error(`connector '${input.name}' already exists`);
+
+  const fm = {
+    connector: input.name,
+    kind: input.kind,
+    ...(input.description ? { description: input.description } : {}),
+    ...(input.module ? { module: input.module } : {}),
+    ...(input.config ? { config: input.config } : {}),
+    ...(input.schedule ? { schedule: input.schedule } : {}),
+  };
+  const parsed = ConnectorFrontmatter.parse(fm);
+  const body = `# ${input.name}\n\n${input.description ?? "TODO: describe this connector — what it ingests and how it maps to types."}`;
+  fs.writeFileSync(file, renderConnector(parsed, body));
+  const c = commit(root, [file], `create connector ${input.name}`);
   return { created: input.name, file: path.relative(root, file), ...c };
 }
 

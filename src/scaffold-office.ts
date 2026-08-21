@@ -35,8 +35,9 @@ export function initOffice(root: string): void {
   fs.writeFileSync(p.readme, README);
   const gitignore = path.join(root, ".gitignore");
   fs.writeFileSync(gitignore, ".ontology/\n.env\n");
-  // Create the data/ directory so git tracks it from the start.
+  // Create the data/ and connectors/ directories so git tracks them from the start.
   fs.mkdirSync(path.join(root, "data"), { recursive: true });
+  fs.mkdirSync(p.connectorsDir, { recursive: true });
   ensureRepo(root);
   commit(root, [p.config, p.readme, gitignore], "init agent-office ontology");
 
