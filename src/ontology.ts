@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { paths } from "./paths.js";
-import { renderType, renderAction, renderConnector } from "./serialize.js";
+import { renderType, renderAction, renderConnector, renderPipeline } from "./serialize.js";
 import { load } from "./loader.js";
 import { validate as validateModel } from "./validator.js";
 import { commit } from "./git.js";
@@ -12,10 +12,12 @@ import {
   ConstraintSchema,
   LinkSchema,
   ParamSchema,
+  PipelineFrontmatter,
   TypeFrontmatter,
   type Constraint,
   type Link,
   type Param,
+  type PipelineStep,
   type Problem,
 } from "./types.js";
 
@@ -26,6 +28,7 @@ function ensureDirs(root: string) {
   fs.mkdirSync(p.typesDir, { recursive: true });
   fs.mkdirSync(p.actionsDir, { recursive: true });
   fs.mkdirSync(p.connectorsDir, { recursive: true });
+  fs.mkdirSync(p.pipelinesDir, { recursive: true });
 }
 
 /** Validate frontmatter shape, then write the type file. Throws on invalid shape. */
@@ -228,6 +231,50 @@ export function createConnector(root: string, input: CreateConnectorInput) {
   const body = `# ${input.name}\n\n${input.description ?? "TODO: describe this connector — what it ingests and how it maps to types."}`;
   fs.writeFileSync(file, renderConnector(parsed, body));
   const c = commit(root, [file], `create connector ${input.name}`);
+  return { created: input.name, file: path.relative(root, file), ...c };
+}
+
+// ---- read + edit: pipelines ----
+
+export function listPipelines(root: string) {
+  const model = load(root);
+  return [...model.pipelines.values()].map((p) => ({
+    name: p.name,
+    description: p.frontmatter.description ?? "",
+    steps: p.frontmatter.steps.map((s) => s.connector ?? s.transform),
+  }));
+}
+
+export function readPipeline(root: string, name: string) {
+  const file = paths(root).pipelineFile(name);
+  if (!fs.existsSync(file)) throw new Error(`pipeline '${name}' not found`);
+  const raw = matter(fs.readFileSync(file, "utf8"));
+  return { name, frontmatter: raw.data, body: raw.content, file: path.relative(root, file) };
+}
+
+export interface CreatePipelineInput {
+  name: string;
+  description?: string;
+  steps: PipelineStep[];
+  schedule?: string;
+}
+
+export function createPipeline(root: string, input: CreatePipelineInput) {
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(input.name)) throw new Error(`invalid pipeline name '${input.name}'`);
+  ensureDirs(root);
+  const file = paths(root).pipelineFile(input.name);
+  if (fs.existsSync(file)) throw new Error(`pipeline '${input.name}' already exists`);
+
+  const fm = {
+    pipeline: input.name,
+    ...(input.description ? { description: input.description } : {}),
+    steps: input.steps,
+    ...(input.schedule ? { schedule: input.schedule } : {}),
+  };
+  const parsed = PipelineFrontmatter.parse(fm);
+  const body = `# ${input.name}\n\n${input.description ?? "TODO: describe this pipeline's data flow."}`;
+  fs.writeFileSync(file, renderPipeline(parsed, body));
+  const c = commit(root, [file], `create pipeline ${input.name}`);
   return { created: input.name, file: path.relative(root, file), ...c };
 }
 

@@ -7,11 +7,13 @@ import {
   ActionFrontmatter,
   ConnectorFrontmatter,
   OntologyConfig,
+  PipelineFrontmatter,
   SPEC_VERSION,
   TypeFrontmatter,
   type ActionDoc,
   type ConnectorDoc,
   type OntologyModel,
+  type PipelineDoc,
   type Problem,
   type TypeDoc,
 } from "./types.js";
@@ -87,5 +89,16 @@ export function load(root: string): OntologyModel {
     }
   }
 
-  return { root, config, types, actions, connectors, problems };
+  const pipelines = new Map<string, PipelineDoc>();
+  for (const file of listMd(p.pipelinesDir)) {
+    const raw = matter(fs.readFileSync(file, "utf8"));
+    const parsed = PipelineFrontmatter.safeParse(raw.data);
+    if (parsed.success) {
+      pipelines.set(parsed.data.pipeline, { name: parsed.data.pipeline, frontmatter: parsed.data, body: raw.content, file });
+    } else {
+      problems.push(issues(root, file, parsed.error));
+    }
+  }
+
+  return { root, config, types, actions, connectors, pipelines, problems };
 }

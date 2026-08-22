@@ -1,12 +1,17 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import YAML from "yaml";
 import { load } from "../loader.js";
+import { paths } from "../paths.js";
 import { checkConstraints, checkPropertyConstraints } from "../validator.js";
 import { checkTransition, transitiveClosure, symmetricTargets } from "../infer.js";
 import { writeInstanceFile } from "./materialize.js";
 import type { Param, TypeDoc } from "../types.js";
 import type { Rec } from "./record.js";
 import type { Store } from "./store.js";
+import type { PutHooks } from "./hooks.js";
 import { SqliteStore } from "./sqlite-store.js";
 
 export interface InstanceProblem { field: string; message: string; }
@@ -60,6 +65,7 @@ export function openStore(root: string): SqliteStore {
 export class Dataset {
   readonly root: string;
   readonly store: Store;
+  private hooks: PutHooks[] = [];
 
   /**
    * Construct a dataset. With no `store`, defaults to the local SQLite index
@@ -76,11 +82,34 @@ export class Dataset {
     }
   }
 
-  /** Open a dataset using the store configured in ontology.config.yaml (SQLite default). */
+  /** Register write middleware. Applies to every put (connectors, actions, direct). */
+  use(hook: PutHooks): this {
+    this.hooks.push(hook);
+    return this;
+  }
+
+  /** Open a dataset using the store + hooks configured in ontology.config.yaml. */
   static async open(root: string): Promise<Dataset> {
     const { openNamedStore } = await import("./resolver.js");
     const store = await openNamedStore(root);
-    return new Dataset(root, store);
+    const ds = new Dataset(root, store);
+    await ds.loadConfiguredHooks();
+    return ds;
+  }
+
+  /** Load hook modules listed under `hooks:` in ontology.config.yaml. */
+  private async loadConfiguredHooks(): Promise<void> {
+    const cfgPath = paths(this.root).config;
+    if (!fs.existsSync(cfgPath)) return;
+    const raw = YAML.parse(fs.readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
+    const hookPaths = Array.isArray(raw.hooks) ? (raw.hooks as string[]) : [];
+    for (const modPath of hookPaths) {
+      const abs = path.isAbsolute(modPath) ? modPath : path.join(this.root, modPath);
+      const mod = await import(pathToFileURL(abs).href);
+      const exp = mod.default ?? mod.hooks;
+      const hook: PutHooks | undefined = typeof exp === "function" ? await exp(this) : exp;
+      if (hook) this.use(hook);
+    }
   }
 
   private typeDoc(name: string): TypeDoc {
@@ -93,6 +122,14 @@ export class Dataset {
     const type = this.typeDoc(input.type);
     const scope = input.scope ?? "shared";
     const props = type.frontmatter.properties ?? {};
+
+    // --- beforePut hooks (may enrich/derive data before validation) ---
+    for (const h of this.hooks) {
+      if (h.beforePut) {
+        const next = await h.beforePut({ type: input.type, id: input.id, scope, data: input.data });
+        if (next) input.data = next;
+      }
+    }
 
     // --- shape validation ---
     const shapeProblem = validateInstance(type, input.data);
@@ -139,6 +176,10 @@ export class Dataset {
     const rec = await this.store.upsert({ type: input.type, id, scope, data: input.data });
     // Write-back: keep the file as source of truth so git tracks every data change.
     writeInstanceFile(this.root, input.type, id, input.data, scope);
+    // --- afterPut hooks (enrich/embed/audit/notify) ---
+    for (const h of this.hooks) {
+      if (h.afterPut) await h.afterPut(rec);
+    }
     return rec;
   }
 

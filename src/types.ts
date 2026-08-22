@@ -121,6 +121,28 @@ export const ConnectorFrontmatter = z.object({
 });
 export type ConnectorFrontmatter = z.infer<typeof ConnectorFrontmatter>;
 
+/** One step in a pipeline: exactly one of connector | transform. */
+export const PipelineStep = z
+  .object({
+    connector: z.string().optional(),
+    transform: z.string().optional(),
+    module: z.string().optional(),
+    config: z.record(z.any()).optional(),
+  })
+  .refine((s) => (s.connector ? 1 : 0) + (s.transform ? 1 : 0) === 1, {
+    message: "each step must have exactly one of 'connector' or 'transform'",
+  });
+export type PipelineStep = z.infer<typeof PipelineStep>;
+
+/** A pipeline composes ordered ingest/transform steps into a data-management flow. */
+export const PipelineFrontmatter = z.object({
+  pipeline: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/, "pipeline name must be alphanumeric/underscore/dash"),
+  description: z.string().optional(),
+  steps: z.array(PipelineStep),
+  schedule: z.string().optional(),
+});
+export type PipelineFrontmatter = z.infer<typeof PipelineFrontmatter>;
+
 export const OntologyConfig = z.object({
   name: z.string(),
   version: z.string().default("0.1.0"),
@@ -131,6 +153,7 @@ export type OntologyConfig = z.infer<typeof OntologyConfig>;
 export interface TypeDoc { name: string; frontmatter: TypeFrontmatter; body: string; file: string; }
 export interface ActionDoc { name: string; frontmatter: ActionFrontmatter; body: string; file: string; }
 export interface ConnectorDoc { name: string; frontmatter: ConnectorFrontmatter; body: string; file: string; }
+export interface PipelineDoc { name: string; frontmatter: PipelineFrontmatter; body: string; file: string; }
 export interface Problem { level: "error" | "warning"; where: string; message: string; }
 export interface OntologyModel {
   root: string;
@@ -138,5 +161,6 @@ export interface OntologyModel {
   types: Map<string, TypeDoc>;
   actions: Map<string, ActionDoc>;
   connectors: Map<string, ConnectorDoc>;
+  pipelines: Map<string, PipelineDoc>;
   problems: Problem[];
 }

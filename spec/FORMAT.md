@@ -176,9 +176,61 @@ Resolution when running (`run_connector` / `ontology run-connector`):
    (`registerConnector(kind, factory)`).
 
 The connector's `sync(ctx)` receives a `ConnectorContext` — `ctx.upsert(type, id,
-data)` writes through the full pipeline (validation + `data/` file write-back +
-oplog), `ctx.config` is the non-secret config, and `ctx.env(key)` reads secrets.
+data)` writes through the full pipeline (validation + hooks + `data/` file
+write-back + oplog), `ctx.config` is the non-secret config, `ctx.env(key)` reads
+secrets, and `ctx.bag` is shared scratch state when run inside a pipeline.
 Because writes go through the dataset, a connector cannot introduce invalid data.
+
+## Pipeline files
+
+A pipeline composes ordered steps — connectors and transforms — into a
+data-management flow. Steps share a `bag` (scratch state), so one step hands off
+to the next.
+
+```markdown
+---
+pipeline: slack-ingest
+steps:
+  - connector: slack-threads       # ingest
+  - transform: extract-tasks       # map / enrich (registered or module-linked)
+    config: { minLength: 20 }
+  - connector: notify-assignees    # side effect
+schedule: "*/5 * * * *"            # optional cron hint (host schedules)
+---
+# slack-ingest
+What this flow does.
+```
+
+Run with `run_pipeline` / `ontology run-pipeline`. A failing step is recorded in
+the result and the pipeline continues — nothing throws. Each step writes through
+the dataset, so the whole flow is validated + hooked + versioned.
+
+**Transforms** are reusable steps registered in code
+(`registerTransform(name, fn)`) or linked per-step via `module:`. A transform
+receives the same context (`bag`, `config`, `dataset`, `upsert`) and returns a
+`StepResult` (`{ processed, errors }`).
+
+## Write hooks (middleware)
+
+Hooks run on **every** write (connector, action, or direct `put`) — the
+cross-cutting data-management layer.
+
+```js
+// hooks/derive.mjs  (referenced from ontology.config.yaml: hooks: [hooks/derive.mjs])
+export default {
+  beforePut(input) {          // runs before validation — enrich / derive
+    if (input.type === "Order" && input.data.items) {
+      return { ...input.data, total: sum(input.data.items) };
+    }
+  },
+  async afterPut(rec) {       // runs after store + file write — embed / audit / notify
+    if (rec._type === "Message") await embedForVectorSearch(rec);
+  },
+};
+```
+
+Register programmatically with `dataset.use(hooks)`, or list module paths under
+`hooks:` in `ontology.config.yaml` (loaded by `Dataset.open` / `serve`).
 
 ## Backing stores and blobs (config)
 

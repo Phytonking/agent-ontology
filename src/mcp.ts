@@ -9,6 +9,7 @@ import { syncBidirectional } from "./data/sync.js";
 import { runAction } from "./data/actions.js";
 import { materialize, watchAndMaterialize } from "./data/materialize.js";
 import { runConnector } from "./connectors/run.js";
+import { runPipeline } from "./pipelines/run.js";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -203,6 +204,35 @@ export function buildServer(root: string, version: string, dataset?: Dataset): M
     async ({ name }) => { try { return text(await runConnector(root, name, data)); } catch (e) { return fail(e); } }
   );
 
+  // ---- pipelines ----
+
+  server.tool("list_pipelines", "List all defined pipelines (composed data-management flows).", {}, async () => {
+    try { return text(onto.listPipelines(root)); } catch (e) { return fail(e); }
+  });
+
+  server.tool("read_pipeline", "Read a pipeline definition.", { name: z.string() }, async ({ name }) => {
+    try { return text(onto.readPipeline(root, name)); } catch (e) { return fail(e); }
+  });
+
+  server.tool(
+    "create_pipeline",
+    "Define a pipeline: an ordered list of connector/transform steps.",
+    {
+      name: z.string(),
+      description: z.string().optional(),
+      steps: z.array(z.object({ connector: z.string().optional(), transform: z.string().optional(), module: z.string().optional(), config: z.record(z.any()).optional() })),
+      schedule: z.string().optional(),
+    },
+    async (args) => { try { return text(onto.createPipeline(root, args)); } catch (e) { return fail(e); } }
+  );
+
+  server.tool(
+    "run_pipeline",
+    "Run a pipeline: execute its steps in order, threading shared state, writing through the ontology.",
+    { name: z.string() },
+    async ({ name }) => { try { return text(await runPipeline(root, name, data)); } catch (e) { return fail(e); } }
+  );
+
   server.tool(
     "sync", "Bidirectional incremental sync with a peer ontology folder.",
     { peer: z.string(), types: z.array(z.string()).optional() },
@@ -246,4 +276,6 @@ export async function serve(root: string, version: string): Promise<void> {
     console.error(`  dynamic action tools: ${[...model.actions.keys()].join(", ")}`);
   if (model.connectors.size > 0)
     console.error(`  connectors: ${[...model.connectors.keys()].join(", ")}`);
+  if (model.pipelines.size > 0)
+    console.error(`  pipelines: ${[...model.pipelines.keys()].join(", ")}`);
 }

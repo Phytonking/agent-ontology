@@ -38,6 +38,7 @@ export function initOffice(root: string): void {
   // Create the data/ and connectors/ directories so git tracks them from the start.
   fs.mkdirSync(path.join(root, "data"), { recursive: true });
   fs.mkdirSync(p.connectorsDir, { recursive: true });
+  fs.mkdirSync(p.pipelinesDir, { recursive: true });
   ensureRepo(root);
   commit(root, [p.config, p.readme, gitignore], "init agent-office ontology");
 
