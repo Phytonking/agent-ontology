@@ -1,8 +1,9 @@
 {
   "name": "ontolayer",
   "version": "0.2.0",
-  "description": "Filesystem-first, agent-editable ontology framework. Point any MCP agent at a folder of markdown files; it reads, understands, and edits the ontology.",
+  "description": "Filesystem-first, agent-editable ontology framework. Run it as a service (Docker/VM); point any MCP agent at a folder of markdown files it reads, edits, and serves data through.",
   "license": "Apache-2.0",
+  "private": true,
   "type": "module",
   "author": "Avi Agola",
   "repository": {

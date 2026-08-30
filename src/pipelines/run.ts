@@ -2,9 +2,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { load } from "../loader.js";
 import { Dataset } from "../data/dataset.js";
-import { resolveConnectorImpl, makeContext } from "../connectors/run.js";
+import { resolveConnectorImpl, makeContext, buildConnectorContext } from "../connectors/run.js";
 import { getTransform } from "../transforms/registry.js";
-import type { ConnectorContext, StepResult, Transform } from "../connectors/types.js";
+import type { StepResult, Transform } from "../connectors/types.js";
 
 export interface PipelineResult {
   pipeline: string;
@@ -52,7 +52,7 @@ export async function runPipeline(root: string, name: string, dataset?: Dataset)
           steps.push({ step: step.connector, kind: "connector", processed: 0, errors: [`no implementation for connector '${step.connector}'`] });
           continue;
         }
-        const ctx: ConnectorContext = { ...makeContext(root, ds, merged.config as Record<string, unknown>, bag), def: merged };
+        const ctx = buildConnectorContext(root, ds, merged, bag);
         try {
           const r = await impl.sync(ctx);
           steps.push({ step: step.connector, kind: "connector", processed: r.ingested, errors: r.errors, info: r.info });

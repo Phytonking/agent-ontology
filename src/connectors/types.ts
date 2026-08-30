@@ -16,9 +16,20 @@ export interface PipelineContext {
   upsert(type: string, id: string | undefined, data: Record<string, unknown>, scope?: string): Promise<{ _id: string }>;
 }
 
+/** A resolved data connection: config from the connection file + secrets from env. */
+export interface ResolvedConnection {
+  name: string;
+  kind: string;
+  config: Record<string, unknown>;
+  /** Read a secret: ONTOLAYER_CONN_<NAME>_<KEY>. */
+  secret(key: string): string | undefined;
+}
+
 /** What a connector receives when it runs — a pipeline context plus its definition. */
 export interface ConnectorContext extends PipelineContext {
   def: ConnectorFrontmatter;
+  /** The resolved connection, if the connector references one. */
+  connection?: ResolvedConnection;
 }
 
 export interface StepResult {

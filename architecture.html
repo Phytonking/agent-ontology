@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ontolayer — Architecture</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a22; --panel2:#1b2030; --ink:#e7ecf3; --muted:#9aa4b2;
+    --line:#262c3a; --accent:#6ea8fe; --accent2:#7ee7c7; --warn:#ffb454; --violet:#c99bff;
+    --bad:#ff6b6b; --code:#0b0d12; --maxw:1080px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:56px 24px 120px}
+  .eyebrow{display:inline-block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent2);
+    background:rgba(126,231,199,.08);border:1px solid rgba(126,231,199,.25);padding:4px 10px;border-radius:999px;margin-bottom:16px}
+  h1{font-size:34px;margin:0 0 12px;letter-spacing:-.02em}
+  .lead{font-size:17px;color:var(--muted);max-width:70ch;margin:0 0 8px}
+  .lead b{color:var(--ink);font-weight:600}
+  h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:52px 0 14px;font-weight:700}
+  h2 .n{color:var(--accent);margin-right:8px}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#cfe1ff}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:16px 18px;overflow:auto;margin:14px 0}
+  pre code{background:none;border:none;padding:0;color:#d7e0ee;font-size:12.5px;line-height:1.55}
+  .muted{color:var(--muted)}
+
+  /* layer stack */
+  .stack{display:flex;flex-direction:column;gap:0;align-items:stretch}
+  .layer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;position:relative}
+  .layer .ll{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-weight:700}
+  .layer .ll .tag{color:var(--accent);margin-left:8px;font-weight:600;text-transform:none;letter-spacing:0}
+  .arrow{height:26px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;gap:8px}
+  .arrow::before,.arrow::after{content:"";height:1px;width:60px;background:linear-gradient(90deg,transparent,var(--line))}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);color:#cbd5e6}
+  .chip.b{border-color:rgba(110,168,254,.4);color:var(--accent)}
+  .chip.g{border-color:rgba(126,231,199,.4);color:var(--accent2)}
+  .chip.v{border-color:rgba(201,155,255,.4);color:var(--violet)}
+  .chip.w{border-color:rgba(255,180,84,.4);color:var(--warn)}
+  .l-agents{border-color:rgba(110,168,254,.35)}
+  .l-conn{border-color:rgba(201,155,255,.35)}
+  .l-back{border-color:rgba(126,231,199,.3)}
+  .side{position:absolute;right:14px;top:14px;font-size:11px;color:var(--muted)}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 8px;font-size:15px}
+  .card p{margin:6px 0;font-size:13.5px;color:var(--muted)}
+
+  .flow{list-style:none;padding:0;margin:0;counter-reset:s}
+  .flow li{counter-increment:s;position:relative;padding:7px 0 7px 30px;font-size:13px;border-bottom:1px dashed var(--line)}
+  .flow li:last-child{border-bottom:none}
+  .flow li::before{content:counter(s);position:absolute;left:0;top:6px;width:20px;height:20px;border-radius:6px;
+    display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--bg);background:var(--accent)}
+  .flow.g li::before{background:var(--accent2)}
+  .flow.v li::before{background:var(--violet)}
+  .flow.w li::before{background:var(--warn)}
+
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+  td code{white-space:nowrap}
+  .rule{border-left:3px solid var(--accent);background:rgba(110,168,254,.07);padding:12px 16px;border-radius:0 10px 10px 0;margin:16px 0}
+  .rule b{color:#fff}
+  .dep{display:flex;gap:14px;flex-wrap:wrap;align-items:stretch}
+  .dep .box{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .dep .box.main{border-color:rgba(110,168,254,.4)}
+  .dep .box h4{margin:0 0 6px;font-size:14px}
+  .dep .box .s{font-size:12px;color:var(--muted)}
+  footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="eyebrow">ontolayer · architecture</span>
+  <h1>How it works</h1>
+  <p class="lead">A <b>filesystem-first, agent-editable ontology framework</b> you run as a service.
+  The ontology is a folder of markdown files (the source of truth); a backing store is a derived,
+  queryable index. Agents read it, edit it, act through it, and grow it — every write goes through
+  one validated, versioned path.</p>
+
+  <!-- ─────────────── THE STACK ─────────────── -->
+  <h2><span class="n">01</span>The layers</h2>
+  <div class="stack">
+
+    <div class="layer l-agents">
+      <div class="ll">Clients <span class="tag">read · edit · act</span></div>
+      <div class="chips">
+        <span class="chip b">AI agents (Claude, LangGraph, any MCP client)</span>
+        <span class="chip b">humans (edit files directly)</span>
+        <span class="chip b">git (clone / pull / PR)</span>
+      </div>
+    </div>
+
+    <div class="arrow">MCP over stdio (local) &nbsp;·&nbsp; HTTP <code>:8787</code> (service) &nbsp;·&nbsp; direct file edits ▼</div>
+
+    <div class="layer">
+      <div class="ll">Interface <span class="tag">~36 MCP tools + CLI</span></div>
+      <div class="chips">
+        <span class="chip">discover: list_types · read_type · list_actions</span>
+        <span class="chip">edit: create_type · add_property · add_link · add_constraint · create_action</span>
+        <span class="chip">data: put · get · query · search · traverse</span>
+        <span class="chip">act: run_action · <em>+ one tool per action</em></span>
+        <span class="chip v">connections · connectors · pipelines</span>
+        <span class="chip">sync · materialize · validate</span>
+      </div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="layer">
+      <div class="ll">Engine <span class="tag">one validated write path</span></div>
+      <div class="chips">
+        <span class="chip">loader (folder → model)</span>
+        <span class="chip">validator (coherence + constraints)</span>
+        <span class="chip">infer (transitive/symmetric/functional)</span>
+        <span class="chip g">Dataset · put/get/query/search/traverse</span>
+        <span class="chip w">hooks (beforePut / afterPut)</span>
+        <span class="chip">actions (preconditions + transitions + effects)</span>
+        <span class="chip">materialize (files→store) · sync (oplog)</span>
+      </div>
+    </div>
+
+    <div class="arrow">every connector / transform / action / put flows through <code>Dataset.put</code> ▼</div>
+
+    <div class="layer l-conn">
+      <div class="ll">Data-connection layer <span class="tag">per-stack, pluggable — no core changes</span></div>
+      <div class="grid2" style="margin-top:2px">
+        <div>
+          <div class="chips">
+            <span class="chip v">connections — named sources (DB / API / Slack / bucket)</span>
+            <span class="chip v">connectors — ingest logic (registered kind or module)</span>
+          </div>
+        </div>
+        <div>
+          <div class="chips">
+            <span class="chip v">transforms — reusable map / enrich steps</span>
+            <span class="chip v">pipelines — ordered steps, shared bag</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">resolver binds by config + env secrets ▼</div>
+
+    <div class="layer l-back">
+      <div class="ll">Backends <span class="tag">swap by config, secrets from env</span></div>
+      <div class="chips">
+        <span class="chip g">Store: SQLite (default) · Postgres + pgvector</span>
+        <span class="chip g">Blob: filesystem (default) · S3 · Cloudflare R2</span>
+        <span class="chip">git — versions every definition + data change</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="rule"><b>The invariant:</b> a connector, transform, pipeline, action, or direct write all call
+    <code>Dataset.put</code> → hooks → type + constraint + state-transition validation → store write → file
+    write-back → oplog. Nothing can inject invalid data, and every change is versioned.</div>
+
+  <!-- ─────────────── FILES ─────────────── -->
+  <h2><span class="n">02</span>The ontology is a folder</h2>
+  <div class="grid2">
+    <div>
+<pre><code>my-ontology/
+  ontology.config.yaml   # name, stores:, blobs:, hooks:
+  types/       Order.md  Agent.md  Task.md ...
+  actions/     issue_refund.md  assign_task.md ...
+  connections/ crm-db.md  slack.md          # named sources
+  connectors/  slack-threads.md ...          # ingest logic
+  pipelines/   slack-ingest.md ...           # composed flows
+  data/                                       # SOURCE OF TRUTH
+    Order/  1042.yaml
+    Task/   task-001.yaml
+  .ontology/   data.db                        # derived index (gitignored)</code></pre>
+    </div>
+    <div class="card">
+      <h3>Definitions vs data vs secrets</h3>
+      <p><b style="color:var(--accent2)">Definitions</b> (types/actions/…) → git. The shared, reviewable meaning.</p>
+      <p><b style="color:var(--accent2)">Instance data</b> (<code>data/*.yaml</code>) → git + materialized into the store. Files are the source of truth.</p>
+      <p><b style="color:var(--accent2)">The index</b> (<code>.ontology/data.db</code> or Postgres) → derived, queryable, gitignored.</p>
+      <p><b style="color:var(--accent2)">Secrets</b> → env only (<code>ONTOLAYER_STORE_*</code>, <code>ONTOLAYER_CONN_*</code>), never committed.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────── FLOWS ─────────────── -->
+  <h2><span class="n">03</span>Key flows</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="color:var(--accent)">Write — <code>put</code> / agent or file</h3>
+      <ol class="flow">
+        <li>beforePut hooks enrich / derive fields</li>
+        <li>validate types, constraints, state transitions</li>
+        <li>store upsert (version + content hash)</li>
+        <li>write back <code>data/&lt;Type&gt;/&lt;id&gt;.yaml</code></li>
+        <li>append oplog · afterPut hooks (embed / audit / notify)</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--accent2)">Act — <code>run_action</code></h3>
+      <ol class="flow g">
+        <li>validate typed inputs</li>
+        <li>load target record (<code>on:</code> type)</li>
+        <li>check preconditions + legal state transition</li>
+        <li>apply effects as a <code>put</code> (no side effect unless valid)</li>
+        <li>result returned; oplog records the change</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--violet)">Ingest — <code>run_pipeline</code></h3>
+      <ol class="flow v">
+        <li>resolve connection (config + env secrets)</li>
+        <li>connector pulls source → <code>ctx.upsert</code></li>
+        <li>transform maps / enriches (shared <code>bag</code>)</li>
+        <li>each step writes through Dataset (validated)</li>
+        <li>unknown concept → propose a new type</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--warn)">Sync — <code>sync</code> / <code>materialize</code></h3>
+      <ol class="flow w">
+        <li>materialize: <code>data/*.yaml</code> → store on boot + on edit</li>
+        <li>sync: pull peer's oplog since cursor</li>
+        <li>apply (last-write-wins, hash no-op)</li>
+        <li>advance cursor — idempotent, no echo</li>
+        <li>git pull + materialize = distributed sync</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- ─────────────── SCOPES ─────────────── -->
+  <h2><span class="n">04</span>Individual vs shared (git model)</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>An ontology = a git repo</h3>
+      <p>Individual agent = its own repo (private memory, local SQLite).
+        Shared org = one canonical repo (Postgres, served over HTTP).</p>
+      <p>Read = overlay (own ∪ parents). Write to your own; <code>propose_to</code> a parent = git PR;
+        everyone <code>pull</code>s merged truth.</p>
+    </div>
+    <div class="card">
+      <h3>Two run modes, one codebase</h3>
+      <p><b style="color:var(--accent)">Local</b> — <code>ontology serve</code> over stdio. One repo, offline, private.</p>
+      <p><b style="color:var(--accent)">Service</b> — <code>ontology serve --http</code>. Many agents connect over the network to a
+        shared ontology backed by Postgres + S3.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────── DEPLOYMENT ─────────────── -->
+  <h2><span class="n">05</span>Deployment (Docker / VM)</h2>
+  <div class="dep">
+    <div class="box main">
+      <h4>ontolayer</h4>
+      <div class="s">container · <code>serve --http :8787</code><br>mounts <code>/ontology</code> volume<br>MCP endpoint + <code>/health</code></div>
+    </div>
+    <div class="box">
+      <h4>Postgres</h4>
+      <div class="s">shared instance store<br>JSONB + tsvector<br>pgvector-ready</div>
+    </div>
+    <div class="box">
+      <h4>S3 / R2 / MinIO</h4>
+      <div class="s">blob store<br>attachments, docs<br>large payloads</div>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:12px">Agents → <code>http://host:8787/mcp</code>. Data on volumes; ontology files on the mount (or a
+    git remote). One command:</p>
+<pre><code>ontology init --template office ./ontology   # scaffold
+docker compose up --build                     # postgres + minio + ontolayer
+# agents connect to http://localhost:8787/mcp   ·   health: /health</code></pre>
+
+  <!-- ─────────────── PER-STACK ─────────────── -->
+  <h2><span class="n">06</span>Per-stack extension — where you build</h2>
+  <div class="grid3">
+    <div class="card"><h3 class="muted">Connection</h3><p>A named source: kind + non-secret config; secrets from env. Reused by many connectors.</p></div>
+    <div class="card"><h3 class="muted">Connector</h3><p>Ingest logic — <code>sync(ctx)</code>. Register a kind or link a <code>module:</code>. <code>ctx.upsert</code> is validated.</p></div>
+    <div class="card"><h3 class="muted">Transform</h3><p>Reusable map / enrich step over the shared context. Register or link per step.</p></div>
+    <div class="card"><h3 class="muted">Pipeline</h3><p>Ordered connector + transform steps, threading a <code>bag</code>. A file per flow.</p></div>
+    <div class="card"><h3 class="muted">Hook</h3><p>Middleware on every write — derive, embed, audit, notify. <code>dataset.use()</code> or config <code>hooks:</code>.</p></div>
+    <div class="card"><h3 class="muted">Adapter</h3><p>New backend — implement <code>Store</code> / <code>Blob</code>. Same tools, no core change.</p></div>
+  </div>
+  <div class="rule"><b>Per-stack recipe:</b> a few connections + connectors + transforms, one pipeline file,
+    maybe hooks, point <code>stores:</code>/<code>blobs:</code> at your backend. Core never forks. Share it all as a pack.</div>
+
+  <footer>
+    ontolayer · filesystem-first, agent-editable, run-as-a-service · Apache-2.0 · structure defined, movement open.
+  </footer>
+
+</div>
+</body>
+</html>

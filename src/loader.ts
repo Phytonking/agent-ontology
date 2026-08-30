@@ -5,12 +5,14 @@ import YAML from "yaml";
 import { paths } from "./paths.js";
 import {
   ActionFrontmatter,
+  ConnectionFrontmatter,
   ConnectorFrontmatter,
   OntologyConfig,
   PipelineFrontmatter,
   SPEC_VERSION,
   TypeFrontmatter,
   type ActionDoc,
+  type ConnectionDoc,
   type ConnectorDoc,
   type OntologyModel,
   type PipelineDoc,
@@ -78,6 +80,17 @@ export function load(root: string): OntologyModel {
     }
   }
 
+  const connections = new Map<string, ConnectionDoc>();
+  for (const file of listMd(p.connectionsDir)) {
+    const raw = matter(fs.readFileSync(file, "utf8"));
+    const parsed = ConnectionFrontmatter.safeParse(raw.data);
+    if (parsed.success) {
+      connections.set(parsed.data.connection, { name: parsed.data.connection, frontmatter: parsed.data, body: raw.content, file });
+    } else {
+      problems.push(issues(root, file, parsed.error));
+    }
+  }
+
   const connectors = new Map<string, ConnectorDoc>();
   for (const file of listMd(p.connectorsDir)) {
     const raw = matter(fs.readFileSync(file, "utf8"));
@@ -100,5 +113,5 @@ export function load(root: string): OntologyModel {
     }
   }
 
-  return { root, config, types, actions, connectors, pipelines, problems };
+  return { root, config, types, actions, connections, connectors, pipelines, problems };
 }

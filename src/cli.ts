@@ -5,6 +5,7 @@ import path from "node:path";
 import { init } from "./scaffold.js";
 import { initOffice } from "./scaffold-office.js";
 import { serve } from "./mcp.js";
+import { serveHttp } from "./http.js";
 import { validate } from "./ontology.js";
 import { openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
@@ -12,7 +13,7 @@ import { materialize } from "./data/materialize.js";
 import { doctor } from "./data/resolver.js";
 import { runConnector } from "./connectors/run.js";
 import { runPipeline } from "./pipelines/run.js";
-import { listConnectors, listPipelines } from "./ontology.js";
+import { listConnectors, listConnections, listPipelines } from "./ontology.js";
 
 const VERSION = "0.1.0";
 
@@ -43,14 +44,17 @@ program
 program
   .command("serve")
   .argument("[dir]", "ontology directory", ".")
-  .description("Start the MCP server (stdio) over an ontology folder.")
-  .action(async (dir: string) => {
+  .option("--http", "serve over HTTP (MCP Streamable HTTP) instead of stdio")
+  .option("--port <port>", "HTTP port", "8787")
+  .description("Start the ontology server. Default stdio; --http runs it as a network service.")
+  .action(async (dir: string, opts: { http?: boolean; port: string }) => {
     const root = path.resolve(dir);
     if (!fs.existsSync(root)) {
       console.error(`No such directory: ${root}`);
       process.exit(1);
     }
-    await serve(root, VERSION);
+    if (opts.http) await serveHttp(root, VERSION, Number(opts.port));
+    else await serve(root, VERSION);
   });
 
 program
@@ -78,6 +82,14 @@ program
     store.close();
     console.log(JSON.stringify(r, null, 2));
     if (r.errors.length) process.exit(1);
+  });
+
+program
+  .command("connections")
+  .argument("[dir]", "ontology directory", ".")
+  .description("List defined data connections.")
+  .action((dir: string) => {
+    console.log(JSON.stringify(listConnections(path.resolve(dir)), null, 2));
   });
 
 program

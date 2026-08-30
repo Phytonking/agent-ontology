@@ -204,6 +204,23 @@ export function buildServer(root: string, version: string, dataset?: Dataset): M
     async ({ name }) => { try { return text(await runConnector(root, name, data)); } catch (e) { return fail(e); } }
   );
 
+  // ---- connections (named data sources) ----
+
+  server.tool("list_connections", "List all defined data connections (external sources bound to the ontology).", {}, async () => {
+    try { return text(onto.listConnections(root)); } catch (e) { return fail(e); }
+  });
+
+  server.tool("read_connection", "Read a data connection definition.", { name: z.string() }, async ({ name }) => {
+    try { return text(onto.readConnection(root, name)); } catch (e) { return fail(e); }
+  });
+
+  server.tool(
+    "create_connection",
+    "Define a named data connection (external source). Config is non-secret; secrets come from env ONTOLAYER_CONN_<NAME>_<KEY>.",
+    { name: z.string(), kind: z.string(), description: z.string().optional(), config: z.record(z.any()).optional() },
+    async (args) => { try { return text(onto.createConnection(root, args)); } catch (e) { return fail(e); } }
+  );
+
   // ---- pipelines ----
 
   server.tool("list_pipelines", "List all defined pipelines (composed data-management flows).", {}, async () => {

@@ -108,10 +108,28 @@ export type ActionFrontmatter = z.infer<typeof ActionFrontmatter>;
  * upsert it into the ontology. Core ships the framework, not specific connectors:
  * `kind` maps to a registered implementation, or `module` points to one to load.
  */
+/**
+ * A named data connection — a reusable binding to an external system (a database,
+ * an API, a Slack workspace, an S3 bucket). Connectors reference a connection by
+ * name; the connection supplies endpoint/config, secrets come from env
+ * (ONTOLAYER_CONN_<NAME>_<KEY>). This is the data-connection layer that sits over
+ * the ontology objects.
+ */
+export const ConnectionFrontmatter = z.object({
+  connection: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/, "connection name must be alphanumeric/underscore/dash"),
+  kind: z.string(),
+  description: z.string().optional(),
+  /** Non-secret connection config (host, port, base URL, bucket, etc.). */
+  config: z.record(z.any()).optional(),
+});
+export type ConnectionFrontmatter = z.infer<typeof ConnectionFrontmatter>;
+
 export const ConnectorFrontmatter = z.object({
   connector: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/, "connector name must be alphanumeric/underscore/dash"),
   kind: z.string(),
   description: z.string().optional(),
+  /** Reference a named connection for source binding + secrets. */
+  connection: z.string().optional(),
   /** Path (relative to the ontology root) to a module exporting the connector implementation. */
   module: z.string().optional(),
   /** Non-secret source configuration. Secrets come from env, referenced by name. */
@@ -153,6 +171,7 @@ export type OntologyConfig = z.infer<typeof OntologyConfig>;
 export interface TypeDoc { name: string; frontmatter: TypeFrontmatter; body: string; file: string; }
 export interface ActionDoc { name: string; frontmatter: ActionFrontmatter; body: string; file: string; }
 export interface ConnectorDoc { name: string; frontmatter: ConnectorFrontmatter; body: string; file: string; }
+export interface ConnectionDoc { name: string; frontmatter: ConnectionFrontmatter; body: string; file: string; }
 export interface PipelineDoc { name: string; frontmatter: PipelineFrontmatter; body: string; file: string; }
 export interface Problem { level: "error" | "warning"; where: string; message: string; }
 export interface OntologyModel {
@@ -160,6 +179,7 @@ export interface OntologyModel {
   config: OntologyConfig;
   types: Map<string, TypeDoc>;
   actions: Map<string, ActionDoc>;
+  connections: Map<string, ConnectionDoc>;
   connectors: Map<string, ConnectorDoc>;
   pipelines: Map<string, PipelineDoc>;
   problems: Problem[];

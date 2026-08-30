@@ -1,0 +1,58 @@
+# Run the ontology framework as a service with Postgres + S3 (MinIO).
+#
+#   1. put an ontology folder at ./ontology (ontology init --template office ./ontology)
+#      with ontology.config.yaml pointing stores.main -> postgres, blobs.files -> s3
+#   2. docker compose up --build
+#   3. agents connect to http://localhost:8787/mcp ; health at /health
+#
+# For a laptop/dev run with no external services, drop the stores:/blobs: config
+# from the ontology and the framework falls back to local SQLite + filesystem.
+
+services:
+  ontolayer:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      ONTOLAYER_STORE_MAIN_URL: postgres://onto:onto@postgres:5432/onto
+      ONTOLAYER_BLOB_FILES_ENDPOINT: http://minio:9000
+      ONTOLAYER_BLOB_FILES_REGION: auto
+      ONTOLAYER_BLOB_FILES_BUCKET: ontolayer
+      ONTOLAYER_BLOB_FILES_ACCESS_KEY: minioadmin
+      ONTOLAYER_BLOB_FILES_SECRET_KEY: minioadmin
+    volumes:
+      - ./ontology:/ontology
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: onto
+      POSTGRES_PASSWORD: onto
+      POSTGRES_DB: onto
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onto"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+volumes:
+  pgdata:
+  miniodata:

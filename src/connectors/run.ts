@@ -4,7 +4,28 @@ import { load } from "../loader.js";
 import { Dataset } from "../data/dataset.js";
 import { getConnectorFactory } from "./registry.js";
 import type { ConnectorFrontmatter } from "../types.js";
-import type { Connector, ConnectorContext, ConnectorResult, PipelineContext } from "./types.js";
+import type { Connector, ConnectorContext, ConnectorResult, PipelineContext, ResolvedConnection } from "./types.js";
+
+/** Resolve a named data connection: config from the connection file + env secrets. */
+export function resolveConnection(root: string, connectionName: string | undefined): ResolvedConnection | undefined {
+  if (!connectionName) return undefined;
+  const doc = load(root).connections.get(connectionName);
+  if (!doc) return undefined;
+  const NAME = connectionName.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  return {
+    name: connectionName,
+    kind: doc.frontmatter.kind,
+    config: (doc.frontmatter.config ?? {}) as Record<string, unknown>,
+    secret: (key) => process.env[`ONTOLAYER_CONN_${NAME}_${key.toUpperCase()}`],
+  };
+}
+
+/** Build a full connector context: base context + connection (config merged) + def. */
+export function buildConnectorContext(root: string, dataset: Dataset, fm: ConnectorFrontmatter, bag: Record<string, unknown> = {}): ConnectorContext {
+  const connection = resolveConnection(root, fm.connection);
+  const mergedConfig = { ...(connection?.config ?? {}), ...((fm.config ?? {}) as Record<string, unknown>) };
+  return { ...makeContext(root, dataset, mergedConfig, bag), def: fm, connection };
+}
 
 /**
  * Resolve a connector implementation:
@@ -73,7 +94,7 @@ export async function runConnector(
         ],
       };
     }
-    const ctx: ConnectorContext = { ...makeContext(root, ds, (fm.config ?? {}) as Record<string, unknown>, bag), def: fm };
+    const ctx = buildConnectorContext(root, ds, fm, bag);
     return await connector.sync(ctx);
   } catch (e) {
     return { connector: name, ingested: 0, errors: [(e as Error).message] };

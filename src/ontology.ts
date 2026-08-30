@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { paths } from "./paths.js";
-import { renderType, renderAction, renderConnector, renderPipeline } from "./serialize.js";
+import { renderType, renderAction, renderConnector, renderConnection, renderPipeline } from "./serialize.js";
 import { load } from "./loader.js";
 import { validate as validateModel } from "./validator.js";
 import { commit } from "./git.js";
 import {
   ActionFrontmatter,
+  ConnectionFrontmatter,
   ConnectorFrontmatter,
   ConstraintSchema,
   LinkSchema,
@@ -27,6 +28,7 @@ function ensureDirs(root: string) {
   const p = paths(root);
   fs.mkdirSync(p.typesDir, { recursive: true });
   fs.mkdirSync(p.actionsDir, { recursive: true });
+  fs.mkdirSync(p.connectionsDir, { recursive: true });
   fs.mkdirSync(p.connectorsDir, { recursive: true });
   fs.mkdirSync(p.pipelinesDir, { recursive: true });
 }
@@ -231,6 +233,50 @@ export function createConnector(root: string, input: CreateConnectorInput) {
   const body = `# ${input.name}\n\n${input.description ?? "TODO: describe this connector — what it ingests and how it maps to types."}`;
   fs.writeFileSync(file, renderConnector(parsed, body));
   const c = commit(root, [file], `create connector ${input.name}`);
+  return { created: input.name, file: path.relative(root, file), ...c };
+}
+
+// ---- read + edit: connections ----
+
+export function listConnections(root: string) {
+  const model = load(root);
+  return [...model.connections.values()].map((c) => ({
+    name: c.name,
+    kind: c.frontmatter.kind,
+    description: c.frontmatter.description ?? "",
+  }));
+}
+
+export function readConnection(root: string, name: string) {
+  const file = paths(root).connectionFile(name);
+  if (!fs.existsSync(file)) throw new Error(`connection '${name}' not found`);
+  const raw = matter(fs.readFileSync(file, "utf8"));
+  return { name, frontmatter: raw.data, body: raw.content, file: path.relative(root, file) };
+}
+
+export interface CreateConnectionInput {
+  name: string;
+  kind: string;
+  description?: string;
+  config?: Record<string, unknown>;
+}
+
+export function createConnection(root: string, input: CreateConnectionInput) {
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(input.name)) throw new Error(`invalid connection name '${input.name}'`);
+  ensureDirs(root);
+  const file = paths(root).connectionFile(input.name);
+  if (fs.existsSync(file)) throw new Error(`connection '${input.name}' already exists`);
+  const NAME = input.name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const fm = {
+    connection: input.name,
+    kind: input.kind,
+    ...(input.description ? { description: input.description } : {}),
+    ...(input.config ? { config: input.config } : {}),
+  };
+  const parsed = ConnectionFrontmatter.parse(fm);
+  const body = `# ${input.name}\n\n${input.description ?? "TODO: describe this data connection."}\n\nSecrets are read from the environment as \`ONTOLAYER_CONN_${NAME}_<KEY>\`.`;
+  fs.writeFileSync(file, renderConnection(parsed, body));
+  const c = commit(root, [file], `create connection ${input.name}`);
   return { created: input.name, file: path.relative(root, file), ...c };
 }
 
