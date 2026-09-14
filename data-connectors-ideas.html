@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Connectors — Ideas & Critique</title>
+<style>
+  :root{
+    --bg:#0f1115;--panel:#161a22;--panel2:#1b2030;--ink:#e7ecf3;--muted:#9aa4b2;
+    --line:#262c3a;--accent:#6ea8fe;--accent2:#7ee7c7;--warn:#ffb454;--violet:#c99bff;
+    --bad:#ff6b6b;--code:#0b0d12;--maxw:880px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15.5px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:56px 24px 120px}
+  .ey{display:inline-block;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent2);background:rgba(126,231,199,.08);border:1px solid rgba(126,231,199,.25);
+    padding:4px 10px;border-radius:999px;margin-bottom:16px}
+  h1{font-size:32px;margin:0 0 10px;letter-spacing:-.02em}
+  .lead{font-size:16.5px;color:var(--muted);max-width:70ch;margin:0 0 6px}
+  .lead b{color:var(--ink);font-weight:600}
+  h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:48px 0 12px;font-weight:700}
+  h2 .n{color:var(--accent);margin-right:8px}
+  p{margin:10px 0}
+  .muted{color:var(--muted)}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#cfe1ff}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow:auto;margin:12px 0}
+  pre code{background:none;border:none;padding:0;color:#d7e0ee;font-size:12.5px;line-height:1.55}
+
+  .idea{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0;position:relative}
+  .idea h3{margin:0 0 6px;font-size:17px}
+  .idea .verdict{position:absolute;top:18px;right:18px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:3px 10px;border-radius:6px}
+  .idea .verdict.yes{color:var(--accent2);background:rgba(126,231,199,.1);border:1px solid rgba(126,231,199,.3)}
+  .idea .verdict.maybe{color:var(--warn);background:rgba(255,180,84,.08);border:1px solid rgba(255,180,84,.3)}
+  .idea .verdict.no{color:var(--bad);background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.3)}
+  .idea .pitch{color:var(--ink);margin:8px 0 10px}
+  .idea .crit{color:var(--muted);border-left:2px solid var(--bad);padding-left:12px;margin:10px 0}
+  .idea .why{color:var(--muted);border-left:2px solid var(--accent2);padding-left:12px;margin:10px 0}
+  .idea .how{color:#cbd5e6;margin:10px 0}
+
+  .winner{border-color:rgba(126,231,199,.5);background:linear-gradient(135deg,rgba(126,231,199,.04),var(--panel))}
+  .rule{border-left:3px solid var(--accent);background:rgba(110,168,254,.07);padding:12px 16px;border-radius:0 10px 10px 0;margin:16px 0}
+  .rule b{color:#fff}
+  .comp{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  @media(max-width:660px){.comp{grid-template-columns:1fr}}
+  .comp .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .comp .box h4{margin:0 0 6px;font-size:14px}
+  .comp .box p{font-size:13.5px;margin:4px 0}
+  footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<span class="ey">ontolayer · data connectors</span>
+<h1>Ideas & Honest Critique</h1>
+<p class="lead">How do we guide people to build data connectors that work with the ontology?
+Every idea below is pitched, then <b>genuinely criticized</b> — most are not worth it. One is.</p>
+
+<div class="rule"><b>The constraint:</b> a connector's job is simple — pull data from a source, map it to
+ontology objects, call <code>ctx.upsert</code>. The ontology validates; the store persists; files write
+back. The question is: what do we provide so people don't reinvent the same glue every time, without
+over-abstracting?</div>
+
+<!-- ─── IDEA 1 ─── -->
+<h2><span class="n">01</span>Ideas</h2>
+
+<div class="idea">
+  <span class="verdict no">Not worth it</span>
+  <h3>1. Visual connector builder (UI)</h3>
+  <p class="pitch">A web UI where you drag source fields onto object properties, configure auth, click "run."
+    Low-code. Looks impressive in a demo.</p>
+  <div class="crit"><b>Critique:</b> We'd be building Airbyte. The UI is 10x the code of the connectors
+    themselves. It targets non-developers — but our users are developers building agent systems. A YAML
+    file + a 20-line JS module is faster for them than a point-and-click tool. And we'd have to maintain
+    the UI across every source type. This is where projects go to die. <b>Wrong audience, wrong cost.</b></div>
+</div>
+
+<div class="idea">
+  <span class="verdict no">Not worth it</span>
+  <h3>2. Universal adapter layer (connect to "anything")</h3>
+  <p class="pitch">A generic adapter that auto-connects to any Postgres/MySQL/Mongo/API and auto-discovers
+    the schema. "Point it at your DB and it just works."</p>
+  <div class="crit"><b>Critique:</b> This is the dream and the trap. Auto-discovery gives you table names and
+    column types — not meaning. A column called <code>cust_ref</code> could be a customer ID, a string, or
+    garbage. The whole point of the ontology is that <i>a human decides what things mean</i>. Auto-mapping
+    skips the step that matters. You end up with a "semantic layer" that's just a renamed schema dump.<br><br>
+    Even if it worked, every real DB has weird joins, soft deletes, JSON columns, views — the long tail of
+    edge cases would eat us alive. Airbyte has 300+ connectors and thousands of contributors for a reason.
+    <b>We'd build a bad ETL tool instead of a good ontology framework.</b></div>
+</div>
+
+<div class="idea">
+  <span class="verdict no">Not worth it</span>
+  <h3>3. Pre-built connectors for popular sources (Slack, GitHub, Notion, etc.)</h3>
+  <p class="pitch">Ship 10 connectors out of the box: Slack, GitHub, Notion, Salesforce, HubSpot, Linear,
+    Google Docs, email, RSS, webhooks. "Batteries included."</p>
+  <div class="crit"><b>Critique:</b> Every SaaS API changes constantly. Auth flows differ. Rate limits
+    differ. Pagination schemes differ. We'd be maintaining 10 API clients forever — that's an ops burden,
+    not a framework feature. When Slack changes their API, our connector breaks, and the issue lands on us,
+    not the user.<br><br>
+    Worse: every company's Slack workspace maps differently to their ontology. One uses threads for tasks,
+    another uses channels. A generic "Slack connector" either does too little (just dumps messages) or makes
+    opinionated mapping decisions that are wrong for half the users.<br><br>
+    <b>The right move is to make writing a connector so easy that building your own takes 15 minutes, not 15
+    days.</b> Ship zero connectors; make the connector so trivial nobody misses them.</div>
+</div>
+
+<div class="idea">
+  <span class="verdict maybe">Interesting but risky</span>
+  <h3>4. LLM-generated connectors ("describe your source, get a connector")</h3>
+  <p class="pitch">The agent reads your object definitions + a description of your source, then writes
+    the connector module for you. <code>create_connector</code> but the agent authors the <code>sync()</code>
+    function.</p>
+  <div class="crit"><b>Critique:</b> This actually works for simple cases — an agent can write a 20-line
+    fetch+map+upsert function if the source is a REST API with clear docs. But it fails silently on: auth
+    flows (OAuth token refresh), pagination (cursor vs offset), rate limiting, error recovery, idempotency.
+    The generated code looks right and breaks at 2am.<br><br>
+    Also: it couples the connector to whatever the LLM guessed about the API. If the API changes, the
+    agent has to regenerate, and now you're debugging AI-written code you don't understand.<br><br>
+    <b>Verdict:</b> useful as a starting point ("scaffold me a connector for this API"), dangerous as a
+    production solution. Could be a nice-to-have later, but not the core offering.</div>
+</div>
+
+<div class="idea">
+  <span class="verdict maybe">Has merit, limited scope</span>
+  <h3>5. Mapping files (declarative source→object mapping, no code)</h3>
+  <p class="pitch">A YAML file that declares: source table/endpoint → object type, column → property,
+    join → link. No code, just config. A generic runner reads the mapping and does the ETL.</p>
+<pre><code># mappings/crm-to-customer.yaml
+source:
+  kind: postgres
+  table: customers
+  connection: crm-db
+target: Customer
+mapping:
+  email: email_address
+  name: full_name
+sync: poll
+interval: 5m</code></pre>
+  <div class="crit"><b>Critique:</b> This works for the trivial case (flat table → flat object). Falls apart
+    when: the source needs a JOIN, a computed field, a filter, conditional logic, or any transformation
+    beyond column rename. Then you need an "escape hatch" — which is just... writing code. So the mapping
+    file handles 60% of cases and the rest still need a code connector.<br><br>
+    The mapping file IS a DSL, and DSLs always grow until they're a bad programming language.<br><br>
+    <b>Verdict:</b> tempting but a trap. The 60% it handles are the easy 60% that are already trivial to
+    write in code. The hard 40% is where people actually need help, and the mapping file can't help there.</div>
+</div>
+
+<div class="idea">
+  <span class="verdict maybe">Useful but secondary</span>
+  <h3>6. Connector test harness ("does your connector actually work?")</h3>
+  <p class="pitch">A test runner that validates a connector against the ontology: run it in dry-run mode,
+    check every upsert would pass validation, report type mismatches, missing required fields, bad link
+    targets. <code>ontology test-connector my-connector --dry-run</code>.</p>
+  <div class="crit"><b>Critique:</b> Actually useful — the biggest pain with connectors is "it ran but
+    silently produced garbage." A dry-run that catches mismatches before you commit data is real value.<br><br>
+    But: our validation already runs on every <code>ctx.upsert</code>. A connector that produces bad data
+    will get errors in the result right now. The test harness is just running the connector and collecting
+    those errors — which is... <code>run_connector</code> against a test dataset. We almost have this.<br><br>
+    <b>Verdict:</b> worth polishing (add <code>--dry-run</code> flag that validates without persisting), but
+    it's a feature on the existing runner, not a new concept. Secondary to the main idea.</div>
+</div>
+
+<div class="idea">
+  <span class="verdict maybe">Interesting, premature</span>
+  <h3>7. Connector marketplace / registry (share connectors as packages)</h3>
+  <p class="pitch"><code>ontology add slack-connector</code> — install a community connector from a
+    registry. npm-style, but for ontology connectors.</p>
+  <div class="crit"><b>Critique:</b> Requires a community that doesn't exist yet. A marketplace with 3
+    connectors is worse than no marketplace — it signals "dead project." Building the registry infrastructure
+    (publishing, versioning, discovery, trust) is a lot of work for zero users.<br><br>
+    Also: a connector is a 20-line JS file. npm already exists. <code>npm install @ontolayer/slack-connector</code>
+    and point <code>module:</code> at it. We don't need our own registry.<br><br>
+    <b>Verdict:</b> the idea is right (ecosystem), the timing is wrong (no users yet). When there are 50
+    connectors in the wild, aggregate them. Don't build the marketplace before the market.</div>
+</div>
+
+<div class="idea">
+  <span class="verdict no">Overthinking it</span>
+  <h3>8. CDC / real-time sync (stream changes from source DBs)</h3>
+  <p class="pitch">Use Postgres logical replication, Debezium, or change data capture to stream source
+    changes into the ontology in real-time. Always fresh, no polling.</p>
+  <div class="crit"><b>Critique:</b> This is infrastructure, not ontology. Debezium exists. Postgres
+    LISTEN/NOTIFY exists. If someone needs CDC, they pipe it into a connector's <code>sync()</code> —
+    the connector is the integration point, not the framework. Building CDC into ontolayer means we're now
+    maintaining a streaming pipeline engine.<br><br>
+    Also: real-time is rarely needed for an ontology. Ontologies represent meaning and structure, not
+    live event streams. A 5-minute poll is fine for 95% of use cases.<br><br>
+    <b>People who need CDC already have CDC. We just need to be easy to call from it.</b></div>
+</div>
+
+<!-- ─── THE WINNER ─── -->
+<h2><span class="n">02</span>The winner</h2>
+
+<div class="idea winner">
+  <span class="verdict yes">Build this</span>
+  <h3>9. The Connector Guide: a spec + an example + a recipe, not a framework</h3>
+  <p class="pitch">Don't build connector infrastructure. <b>Write the best documentation and example in the
+    world</b> so that writing a connector is a 15-minute copy-paste-edit job. The "product" is clarity, not code.</p>
+
+  <div class="why"><b>Why this wins:</b><br>
+    Every other idea adds code, surface, and maintenance. This one adds understanding. The connector contract
+    is already simple (<code>sync(ctx)</code> + <code>ctx.upsert</code>). What's missing is not tooling —
+    it's <b>a clear, copy-paste path from "I have a source" to "it's in my ontology."</b><br><br>
+    The hardest part of building a connector is not the code — it's knowing what to do. Which fields map
+    where? How do I handle auth? What about pagination? Idempotency? Error handling? A great guide answers
+    every question before you have it.</div>
+
+  <p class="how"><b>What it actually is:</b></p>
+  <ol>
+    <li><b>A spec page</b> (in the ontology folder or on a docs site) that documents the connector contract
+      in full: what <code>ctx</code> gives you, what <code>sync()</code> returns, how errors propagate, how
+      hooks apply, how files write back. The current spec mentions connectors in 3 sentences. This needs to
+      be 2 pages with every edge case covered.</li>
+    <li><b>A cookbook of annotated examples</b> — not abstract, but real scenarios people actually face:
+      <ul>
+        <li>Pull from a REST API (with auth token from env, pagination, rate-limit backoff)</li>
+        <li>Pull from a Postgres table (with connection, incremental by timestamp)</li>
+        <li>Pull from a CSV/JSON file dropped in a folder</li>
+        <li>Pull from a webhook (connector called by an external trigger)</li>
+        <li>A transform that enriches records after ingest (e.g. resolve a foreign key, compute a derived field)</li>
+      </ul>
+      Each example is a complete, runnable file. Copy it, change the URL/table/mapping, done.</li>
+    <li><b>A recipe template</b> — a single <code>.mjs</code> file with blanks to fill in:
+<pre><code>// connectors/my-source.mjs — copy this, fill in the blanks
+export default {
+  async sync(ctx) {
+    // 1. Connect to your source
+    const token = ctx.env("MY_SOURCE_TOKEN");
+    const res = await fetch("https://api.example.com/items", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const items = await res.json();
+
+    // 2. Map each item to an ontology object and upsert
+    let ingested = 0;
+    for (const item of items) {
+      await ctx.upsert("MyObject", item.id, {
+        name: item.title,
+        status: item.state,
+        // ... map your fields here
+      });
+      ingested++;
+    }
+
+    // 3. Return the result
+    return { connector: "my-source", ingested, errors: [] };
+  },
+};</code></pre>
+    </li>
+    <li><b>A checklist</b> — "before you ship your connector" — idempotency (upsert by stable ID),
+      error handling (catch per-record, don't abort the batch), incremental sync (store a cursor in
+      <code>ctx.bag</code> or the env), secrets (never hardcode, use <code>ctx.env()</code>).</li>
+    <li><b>A dry-run flag</b> on the existing runner — <code>ontology run-connector my-source --dry-run</code>
+      — validates every upsert against the ontology without persisting. This is the only code worth adding.</li>
+  </ol>
+
+  <div class="why"><b>Why this beats everything else:</b><br>
+    <ul>
+      <li>Zero new abstractions. Zero new code to maintain (except dry-run, which is tiny).</li>
+      <li>Works for every source — REST, SQL, file, webhook, custom — because it's guidance, not a framework.</li>
+      <li>Scales with the community: when someone writes a great Slack connector, it becomes an example in the
+        cookbook. The guide grows by accumulation, not by building infrastructure.</li>
+      <li>The ontology does the hard work (validation, transitions, file write-back, hooks). The connector
+        just maps. Making the mapping obvious is the whole job.</li>
+      <li>Respects the boundary: <b>structure is defined (the contract), movement is open (the implementation).</b></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ─── COMPARISON ─── -->
+<h2><span class="n">03</span>Why nothing else is worth it (honest comparison)</h2>
+
+<div class="comp">
+  <div class="box">
+    <h4 style="color:var(--bad)">What we'd be building</h4>
+    <p>Visual builder → Airbyte competitor (wrong game)</p>
+    <p>Universal adapter → bad ETL tool (can't understand meaning)</p>
+    <p>Pre-built connectors → 10 API clients to maintain forever</p>
+    <p>Mapping DSL → a bad programming language that handles 60% of cases</p>
+    <p>CDC → infrastructure that already exists</p>
+    <p>Marketplace → registry for a community that doesn't exist</p>
+  </div>
+  <div class="box">
+    <h4 style="color:var(--accent2)">What we should build</h4>
+    <p>A spec page that makes the contract crystal clear</p>
+    <p>5 annotated examples covering real scenarios</p>
+    <p>A copy-paste template with blanks</p>
+    <p>A checklist (idempotency, errors, incremental, secrets)</p>
+    <p>A <code>--dry-run</code> flag on the existing runner</p>
+    <p><b>Total new code: ~20 lines (dry-run). Total new docs: ~5 pages.</b></p>
+  </div>
+</div>
+
+<!-- ─── THE PRINCIPLE ─── -->
+<h2><span class="n">04</span>The principle</h2>
+
+<div class="rule"><b>The ontology framework's job is to validate and store. A connector's job is to map.
+The guide's job is to make the mapping obvious.</b><br><br>
+Don't build connector infrastructure. Build connector clarity. The contract is already right
+(<code>sync(ctx)</code> + <code>ctx.upsert</code>). What's missing is a guide so good that nobody
+needs to ask how.</div>
+
+<p>The best connector framework is no framework — just a contract, a template, and a few great examples.
+Everything else is scope creep disguised as features.</p>
+
+<!-- ─── IF WE MUST ADD CODE ─── -->
+<h2><span class="n">05</span>If we must add code (ranked)</h2>
+
+<ol>
+  <li><b><code>--dry-run</code> on the runner</b> — validate without persisting. ~20 lines. High value / zero risk.</li>
+  <li><b>Incremental cursor helper</b> — <code>ctx.cursor.get(key)</code> / <code>ctx.cursor.set(key, val)</code>
+    backed by a small table. Connectors that poll need to remember "where they left off." Currently they'd
+    use env vars or bag state (which doesn't persist between runs). This is the only real gap in the contract.
+    ~50 lines.</li>
+  <li><b>LLM-scaffold command</b> — <code>ontology generate-connector --source "Slack API" --object Message</code>
+    → the agent writes a starter <code>.mjs</code> file. Nice to have. Depends on an LLM being available,
+    which is a big assumption for a framework. Later.</li>
+</ol>
+
+<p class="muted">Everything else: not worth it.</p>
+
+<footer>
+  ontolayer · data connectors ideas · structure defined, movement open · don't build the plumbing, build the guide.
+</footer>
+
+</div>
+</body>
+</html>

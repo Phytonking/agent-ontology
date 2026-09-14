@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { Dataset } from "../data/dataset.js";
 import { resolveConnectorImpl, makeContext, buildConnectorContext } from "../connectors/run.js";
 import { getTransform } from "../transforms/registry.js";
-import type { StepResult, Transform, ConnectorDef } from "../connectors/types.js";
+import type { StepResult, Transform, ConnectorDef, PipelineContext } from "../connectors/types.js";
 
 export interface PipelineStepDef {
   connector?: string;
