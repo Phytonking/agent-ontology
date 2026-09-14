@@ -3,6 +3,7 @@ import path from "node:path";
 import YAML from "yaml";
 import { paths } from "../paths.js";
 import { load } from "../loader.js";
+import { hashData } from "./record.js";
 import { validateInstance } from "./dataset.js";
 import type { Store } from "./store.js";
 
@@ -12,9 +13,22 @@ export interface MaterializeResult {
   errors: { file: string; error: string }[];
 }
 
+export type WriteMode = "bidirectional" | "index_only";
+
+/** Read write_mode from ontology.config.yaml. Default: bidirectional. */
+export function getWriteMode(root: string): WriteMode {
+  const cfgPath = paths(root).config;
+  if (!fs.existsSync(cfgPath)) return "bidirectional";
+  try {
+    const raw = YAML.parse(fs.readFileSync(cfgPath, "utf8")) as Record<string, unknown>;
+    if (raw.write_mode === "index_only") return "index_only";
+  } catch {}
+  return "bidirectional";
+}
+
 /**
  * Write an instance record back to its canonical YAML file.
- * `data/<Type>/<id>.yaml` — the file IS the source of truth; DB is the index.
+ * Only called when write_mode is "bidirectional" (the default).
  */
 export function writeInstanceFile(
   root: string,
@@ -35,11 +49,7 @@ export function writeInstanceFile(
 
 /**
  * Scan `data/` folder and upsert every instance YAML into the store.
- * Idempotent — re-running is a no-op when files haven't changed (hash match).
- *
- * File format: `data/<TypeName>/<id>.yaml`
- * Reserved keys (stripped before storing as data): `_id`, `_scope`.
- * The filename stem is used as the id when `_id` is absent.
+ * Hash-aware: skips files whose content hash matches the stored record.
  */
 export async function materialize(root: string, store: Store): Promise<MaterializeResult> {
   const model = load(root);
@@ -55,6 +65,7 @@ export async function materialize(root: string, store: Store): Promise<Materiali
   for (const typeName of typeDirs) {
     const typeDoc = model.types.get(typeName);
     const dir = p.instanceDir(typeName);
+    if (!fs.existsSync(dir)) continue;
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
 
     for (const file of files) {
@@ -69,6 +80,14 @@ export async function materialize(root: string, store: Store): Promise<Materiali
         const { _id, _scope, ...data } = raw;
         const id = typeof _id === "string" ? _id : path.basename(file, path.extname(file));
         const scope = typeof _scope === "string" ? _scope : "shared";
+
+        // hash-skip: don't re-upsert if the content hasn't changed
+        const hash = hashData(data);
+        const existing = await store.get(typeName, id, scope);
+        if (existing && existing._hash === hash) {
+          result.skipped++;
+          continue;
+        }
 
         if (typeDoc) {
           const problems = validateInstance(typeDoc, data);
@@ -89,6 +108,20 @@ export async function materialize(root: string, store: Store): Promise<Materiali
   return result;
 }
 
+/**
+ * Full re-index: wipe all typed tables and rebuild from YAML files.
+ * Use when the DB is out of sync or after a schema change.
+ */
+export async function reindex(root: string, store: Store): Promise<MaterializeResult> {
+  const model = load(root);
+  // delete all existing records per type
+  for (const typeName of model.types.keys()) {
+    const all = await store.query(typeName, {});
+    for (const rec of all) await store.remove(typeName, rec._id, rec._scope);
+  }
+  return materialize(root, store);
+}
+
 /** Watch `data/` for changes and re-materialize on edit. Returns an unsubscribe fn. */
 export function watchAndMaterialize(root: string, store: Store, onResult?: (r: MaterializeResult) => void): () => void {
   const dataDir = paths(root).dataDir;
@@ -100,7 +133,7 @@ export function watchAndMaterialize(root: string, store: Store, onResult?: (r: M
     debounce = setTimeout(async () => {
       const r = await materialize(root, store);
       onResult?.(r);
-    }, 150);
+    }, 250);
   });
 
   return () => watcher.close();

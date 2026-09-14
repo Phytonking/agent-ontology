@@ -9,7 +9,7 @@ import { serveHttp } from "./http.js";
 import { validate, listObjects } from "./ontology.js";
 import { openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
-import { materialize } from "./data/materialize.js";
+import { materialize, reindex } from "./data/materialize.js";
 import { doctor } from "./data/resolver.js";
 
 const VERSION = "0.3.0";
@@ -61,6 +61,17 @@ program.command("materialize").argument("[dir]", "ontology directory", ".")
     store.close();
     console.log(JSON.stringify(r, null, 2));
     if (r.errors.length) process.exit(1);
+  });
+
+program.command("reindex").argument("[dir]", "ontology directory", ".")
+  .description("Full re-index: wipe all tables and rebuild from data/*.yaml files.")
+  .action(async (dir: string) => {
+    const root = path.resolve(dir);
+    const store = openStore(root);
+    const r = await reindex(root, store);
+    store.close();
+    console.log(`Re-indexed: ${r.ingested} ingested, ${r.skipped} skipped, ${r.errors.length} errors`);
+    if (r.errors.length) { console.log(JSON.stringify(r.errors, null, 2)); process.exit(1); }
   });
 
 program.command("doctor").argument("[dir]", "ontology directory", ".")

@@ -7,7 +7,7 @@ import { load } from "../loader.js";
 import { paths } from "../paths.js";
 import { checkConstraints, checkPropertyConstraints } from "../validator.js";
 import { checkTransition, transitiveClosure, symmetricTargets } from "../infer.js";
-import { writeInstanceFile } from "./materialize.js";
+import { writeInstanceFile, getWriteMode, type WriteMode } from "./materialize.js";
 import type { PropertyDef, TypeDoc } from "../types.js";
 import type { Rec } from "./record.js";
 import type { Store } from "./store.js";
@@ -62,10 +62,12 @@ export function openStore(root: string): TypedSqliteStore {
 export class Dataset {
   readonly root: string;
   readonly store: Store;
+  readonly writeMode: WriteMode;
   private hooks: PutHooks[] = [];
 
   constructor(root: string, store?: Store) {
     this.root = root;
+    this.writeMode = getWriteMode(root);
     if (store) {
       this.store = store;
     } else {
@@ -158,7 +160,9 @@ export class Dataset {
     }
 
     const rec = await this.store.upsert({ type: input.type, id, scope, data: input.data });
-    writeInstanceFile(this.root, input.type, id, input.data, scope);
+    if (this.writeMode === "bidirectional") {
+      writeInstanceFile(this.root, input.type, id, input.data, scope);
+    }
 
     for (const h of this.hooks) {
       if (h.afterPut) await h.afterPut(rec);
