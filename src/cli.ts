@@ -9,6 +9,7 @@ import { serveHttp } from "./http.js";
 import { validate, listObjects } from "./ontology.js";
 import { openStore } from "./data/dataset.js";
 import { syncBidirectional } from "./data/sync.js";
+import { execFileSync } from "node:child_process";
 import { materialize, reindex } from "./data/materialize.js";
 import { doctor } from "./data/resolver.js";
 
@@ -61,6 +62,36 @@ program.command("materialize").argument("[dir]", "ontology directory", ".")
     store.close();
     console.log(JSON.stringify(r, null, 2));
     if (r.errors.length) process.exit(1);
+  });
+
+program.command("branch").argument("[name]", "branch name (omit to show current)")
+  .argument("[dir]", "ontology directory", ".")
+  .description("Create or switch ontology branch (git branch + separate DB per branch).")
+  .action((name: string | undefined, dir: string) => {
+    const root = path.resolve(dir ?? ".");
+    if (!name) {
+      try {
+        const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
+        const safe = branch.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const dbPath = path.join(root, ".ontology", `data-${safe}.db`);
+        console.log(`branch: ${branch}`);
+        console.log(`db:     ${dbPath}`);
+        console.log(`exists: ${fs.existsSync(dbPath)}`);
+      } catch { console.log("not a git repo"); }
+      return;
+    }
+    try {
+      try { execFileSync("git", ["checkout", name], { cwd: root, stdio: "pipe" }); }
+      catch { execFileSync("git", ["checkout", "-b", name], { cwd: root, stdio: "pipe" }); }
+      const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const dbPath = path.join(root, ".ontology", `data-${safe}.db`);
+      const isNew = !fs.existsSync(dbPath);
+      console.log(`Switched to branch: ${name}`);
+      console.log(`DB: ${dbPath}${isNew ? " (new — run 'ontology materialize' to populate)" : ""}`);
+    } catch (e) {
+      console.error(`git error: ${(e as Error).message}`);
+      process.exit(1);
+    }
   });
 
 program.command("reindex").argument("[dir]", "ontology directory", ".")

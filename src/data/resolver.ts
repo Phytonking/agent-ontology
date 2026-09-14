@@ -55,8 +55,12 @@ export async function openNamedStore(root: string, storeName?: string): Promise<
   if (!storeConfig || storeConfig.kind === "sqlite") {
     const { TypedSqliteStore } = await import("./typed-sqlite-store.js");
     const { load } = await import("../loader.js");
+    const { execFileSync } = await import("node:child_process");
     const model = load(root);
-    const dbPath = storeConfig?.path ?? path.join(root, ".ontology", "data.db");
+    let branch = "main";
+    try { branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] }).toString().trim(); } catch {}
+    const safeBranch = branch.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const dbPath = storeConfig?.path ?? path.join(root, ".ontology", `data-${safeBranch}.db`);
     return new TypedSqliteStore(dbPath, model.config.name, model.types);
   }
 

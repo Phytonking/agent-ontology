@@ -13,6 +13,19 @@ import type { Rec } from "./record.js";
 import type { Store } from "./store.js";
 import type { PutHooks } from "./hooks.js";
 import { TypedSqliteStore } from "./typed-sqlite-store.js";
+import { execFileSync } from "node:child_process";
+
+function currentGitBranch(root: string): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
+  } catch { return "main"; }
+}
+
+function dbPathForBranch(root: string): string {
+  const branch = currentGitBranch(root);
+  const safeName = branch.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(root, ".ontology", `data-${safeName}.db`);
+}
 
 export interface InstanceProblem { field: string; message: string; }
 
@@ -56,7 +69,7 @@ export function validateInstance(type: TypeDoc, data: Record<string, unknown>): 
 
 export function openStore(root: string): TypedSqliteStore {
   const model = load(root);
-  return new TypedSqliteStore(path.join(root, ".ontology", "data.db"), model.config.name, model.types);
+  return new TypedSqliteStore(dbPathForBranch(root), model.config.name, model.types);
 }
 
 export class Dataset {
@@ -73,7 +86,7 @@ export class Dataset {
     } else {
       const model = load(root);
       this.store = new TypedSqliteStore(
-        path.join(root, ".ontology", "data.db"),
+        dbPathForBranch(root),
         model.config.name,
         model.types
       );
