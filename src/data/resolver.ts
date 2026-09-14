@@ -53,10 +53,11 @@ export async function openNamedStore(root: string, storeName?: string): Promise<
   const storeConfig = cfg.stores?.[name];
 
   if (!storeConfig || storeConfig.kind === "sqlite") {
-    const { SqliteStore } = await import("./sqlite-store.js");
+    const { TypedSqliteStore } = await import("./typed-sqlite-store.js");
+    const { load } = await import("../loader.js");
+    const model = load(root);
     const dbPath = storeConfig?.path ?? path.join(root, ".ontology", "data.db");
-    const modelName = readOntologyName(root);
-    return new SqliteStore(dbPath, modelName);
+    return new TypedSqliteStore(dbPath, model.config.name, model.types);
   }
 
   if (storeConfig.kind === "postgres") {

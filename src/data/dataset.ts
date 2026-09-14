@@ -12,7 +12,7 @@ import type { PropertyDef, TypeDoc } from "../types.js";
 import type { Rec } from "./record.js";
 import type { Store } from "./store.js";
 import type { PutHooks } from "./hooks.js";
-import { SqliteStore } from "./sqlite-store.js";
+import { TypedSqliteStore } from "./typed-sqlite-store.js";
 
 export interface InstanceProblem { field: string; message: string; }
 
@@ -54,9 +54,9 @@ export function validateInstance(type: TypeDoc, data: Record<string, unknown>): 
   return problems;
 }
 
-export function openStore(root: string): SqliteStore {
+export function openStore(root: string): TypedSqliteStore {
   const model = load(root);
-  return new SqliteStore(path.join(root, ".ontology", "data.db"), model.config.name);
+  return new TypedSqliteStore(path.join(root, ".ontology", "data.db"), model.config.name, model.types);
 }
 
 export class Dataset {
@@ -70,7 +70,11 @@ export class Dataset {
       this.store = store;
     } else {
       const model = load(root);
-      this.store = new SqliteStore(path.join(root, ".ontology", "data.db"), model.config.name);
+      this.store = new TypedSqliteStore(
+        path.join(root, ".ontology", "data.db"),
+        model.config.name,
+        model.types
+      );
     }
   }
 
