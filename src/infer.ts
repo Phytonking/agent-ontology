@@ -1,4 +1,4 @@
-import type { Link } from "./types.js";
+import type { InternalLink as Link } from "./types.js";
 import type { Rec } from "./data/record.js";
 import type { Store } from "./data/store.js";
 

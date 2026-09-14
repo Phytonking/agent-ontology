@@ -1,46 +1,33 @@
 import fs from "node:fs";
 import path from "node:path";
-import matter from "gray-matter";
 import YAML from "yaml";
 import { paths } from "./paths.js";
 import {
-  ActionFrontmatter,
-  ConnectionFrontmatter,
-  ConnectorFrontmatter,
+  ObjectFileSchema,
   OntologyConfig,
-  PipelineFrontmatter,
   SPEC_VERSION,
-  TypeFrontmatter,
+  linkTypeToCardinality,
   type ActionDoc,
-  type ConnectionDoc,
-  type ConnectorDoc,
+  type InternalLink,
+  type ObjectDoc,
   type OntologyModel,
-  type PipelineDoc,
   type Problem,
   type TypeDoc,
 } from "./types.js";
 
-function listMd(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => path.join(dir, f));
-}
-
-function issues(root: string, file: string, err: { issues: { path: (string | number)[]; message: string }[] }): Problem {
-  return {
-    level: "error",
-    where: path.relative(root, file),
-    message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
-  };
-}
-
-/** Read an ontology folder into an in-memory model, collecting parse problems. */
+/**
+ * Load an ontology folder into an in-memory model.
+ *
+ * The folder contains:
+ *   *.yaml at the root  — object definitions (one per object)
+ *   ontology.config.yaml — config (excluded from objects)
+ *   data/<Type>/<id>.yaml — instance data (not loaded here)
+ */
 export function load(root: string): OntologyModel {
   const p = paths(root);
   const problems: Problem[] = [];
 
+  // config
   let config: OntologyConfig = {
     name: path.basename(path.resolve(root)),
     version: "0.1.0",
@@ -54,64 +41,70 @@ export function load(root: string): OntologyModel {
     } catch (e) {
       problems.push({ level: "error", where: "ontology.config.yaml", message: (e as Error).message });
     }
-  } else {
-    problems.push({ level: "warning", where: "ontology.config.yaml", message: "missing config; using defaults" });
   }
 
+  // read all *.yaml at root (except config)
+  const objects = new Map<string, ObjectDoc>();
   const types = new Map<string, TypeDoc>();
-  for (const file of listMd(p.typesDir)) {
-    const raw = matter(fs.readFileSync(file, "utf8"));
-    const parsed = TypeFrontmatter.safeParse(raw.data);
-    if (parsed.success) {
-      types.set(parsed.data.type, { name: parsed.data.type, frontmatter: parsed.data, body: raw.content, file });
-    } else {
-      problems.push(issues(root, file, parsed.error));
-    }
-  }
-
   const actions = new Map<string, ActionDoc>();
-  for (const file of listMd(p.actionsDir)) {
-    const raw = matter(fs.readFileSync(file, "utf8"));
-    const parsed = ActionFrontmatter.safeParse(raw.data);
-    if (parsed.success) {
-      actions.set(parsed.data.action, { name: parsed.data.action, frontmatter: parsed.data, body: raw.content, file });
-    } else {
-      problems.push(issues(root, file, parsed.error));
+
+  if (!fs.existsSync(root)) return { root, config, objects, types, actions, problems };
+
+  const yamlFiles = fs.readdirSync(root)
+    .filter((f) => (f.endsWith(".yaml") || f.endsWith(".yml")) && f !== "ontology.config.yaml")
+    .map((f) => path.join(root, f));
+
+  for (const file of yamlFiles) {
+    try {
+      const raw = YAML.parse(fs.readFileSync(file, "utf8"));
+      if (!raw || typeof raw !== "object" || !raw.object) {
+        problems.push({ level: "warning", where: path.relative(root, file), message: "no 'object' field — skipped" });
+        continue;
+      }
+      const parsed = ObjectFileSchema.safeParse(raw);
+      if (!parsed.success) {
+        const msgs = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+        problems.push({ level: "error", where: path.relative(root, file), message: msgs });
+        continue;
+      }
+
+      const obj = parsed.data;
+      objects.set(obj.object, { name: obj.object, schema: obj, file });
+
+      // derive TypeDoc
+      const internalLinks: Record<string, InternalLink> = {};
+      for (const [lName, lDef] of Object.entries(obj.links ?? {})) {
+        internalLinks[lName] = {
+          to: lDef.to,
+          cardinality: linkTypeToCardinality(lDef.type ?? "many-to-one"),
+          via: lDef.via,
+          inverse: lDef.inverse,
+          through: lDef.through,
+          through_from: lDef.through_from,
+          through_to: lDef.through_to,
+          transitive: lDef.transitive,
+          symmetric: lDef.symmetric,
+          functional: lDef.functional,
+          inverse_functional: lDef.inverse_functional,
+          description: lDef.description,
+        };
+      }
+      types.set(obj.object, {
+        name: obj.object,
+        properties: obj.properties ?? {},
+        links: internalLinks,
+        constraints: obj.constraints ?? [],
+        keys: obj.keys ?? [],
+      });
+
+      // derive ActionDocs
+      for (const [aName, aDef] of Object.entries(obj.actions ?? {})) {
+        actions.set(aName, { name: aName, on: obj.object, def: aDef });
+      }
+    } catch (e) {
+      problems.push({ level: "error", where: path.relative(root, file), message: (e as Error).message });
     }
   }
 
-  const connections = new Map<string, ConnectionDoc>();
-  for (const file of listMd(p.connectionsDir)) {
-    const raw = matter(fs.readFileSync(file, "utf8"));
-    const parsed = ConnectionFrontmatter.safeParse(raw.data);
-    if (parsed.success) {
-      connections.set(parsed.data.connection, { name: parsed.data.connection, frontmatter: parsed.data, body: raw.content, file });
-    } else {
-      problems.push(issues(root, file, parsed.error));
-    }
-  }
-
-  const connectors = new Map<string, ConnectorDoc>();
-  for (const file of listMd(p.connectorsDir)) {
-    const raw = matter(fs.readFileSync(file, "utf8"));
-    const parsed = ConnectorFrontmatter.safeParse(raw.data);
-    if (parsed.success) {
-      connectors.set(parsed.data.connector, { name: parsed.data.connector, frontmatter: parsed.data, body: raw.content, file });
-    } else {
-      problems.push(issues(root, file, parsed.error));
-    }
-  }
-
-  const pipelines = new Map<string, PipelineDoc>();
-  for (const file of listMd(p.pipelinesDir)) {
-    const raw = matter(fs.readFileSync(file, "utf8"));
-    const parsed = PipelineFrontmatter.safeParse(raw.data);
-    if (parsed.success) {
-      pipelines.set(parsed.data.pipeline, { name: parsed.data.pipeline, frontmatter: parsed.data, body: raw.content, file });
-    } else {
-      problems.push(issues(root, file, parsed.error));
-    }
-  }
-
-  return { root, config, types, actions, connections, connectors, pipelines, problems };
+  return { root, config, objects, types, actions, problems };
 }

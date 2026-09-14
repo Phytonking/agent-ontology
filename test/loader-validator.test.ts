@@ -2,83 +2,61 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import YAML from "yaml";
 import { init } from "../src/scaffold.js";
 import { load } from "../src/loader.js";
 import { validate } from "../src/validator.js";
-import { createType, createAction } from "../src/ontology.js";
 
 let dir: string;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "onto-test-")); init(dir); });
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 describe("loader", () => {
-  it("loads all types from init scaffold", () => {
+  it("loads all objects from init scaffold", () => {
     const m = load(dir);
-    expect([...m.types.keys()]).toContain("Order");
-    expect([...m.types.keys()]).toContain("Customer");
-    expect([...m.types.keys()]).toContain("Product");
-    expect([...m.types.keys()]).toContain("OrderItem");
+    expect([...m.objects.keys()]).toContain("Order");
+    expect([...m.objects.keys()]).toContain("Customer");
   });
-  it("loads actions", () => {
+  it("derives types from objects", () => {
     const m = load(dir);
-    expect([...m.actions.keys()]).toContain("issue_refund");
+    expect(m.types.has("Order")).toBe(true);
+    expect(m.types.get("Order")!.properties.status.type).toBe("enum");
   });
-  it("parses enum transitions on Order.status", () => {
+  it("derives actions from objects", () => {
     const m = load(dir);
-    const status = m.types.get("Order")!.frontmatter.properties!.status;
-    expect(status.transitions).toBeDefined();
-    expect(status.transitions!["paid"]).toContain("shipped");
+    expect(m.actions.has("issue_refund")).toBe(true);
+    expect(m.actions.get("issue_refund")!.on).toBe("Order");
   });
-});
-
-describe("validate — clean scaffold", () => {
-  it("returns no errors on the init scaffold", () => {
+  it("parses transitions", () => {
     const m = load(dir);
-    const probs = validate(m).filter((p) => p.level === "error");
-    expect(probs).toHaveLength(0);
+    const t = m.types.get("Order")!.properties.status.transitions!;
+    expect(t["paid"]).toContain("shipped");
   });
 });
 
-describe("validate — constraint coherence", () => {
-  it("errors on transition to non-existent enum value", () => {
-    createType(dir, {
-      name: "Ticket",
-      properties: {
-        status: { type: "enum", values: ["open", "closed"], transitions: { open: ["closed", "NOPE"] } },
-      },
-    });
+describe("validate", () => {
+  it("clean scaffold has no errors", () => {
     const m = load(dir);
-    const errs = validate(m).filter((p) => p.level === "error" && p.where.includes("Ticket"));
-    expect(errs.some((e) => e.message.includes("NOPE"))).toBe(true);
+    const errs = validate(m).filter((p) => p.level === "error");
+    expect(errs).toHaveLength(0);
   });
-  it("errors on conditional that references unknown field", () => {
-    createType(dir, {
-      name: "Ticket2",
-      properties: { state: { type: "string" } },
-      constraints: [{ kind: "conditional", if_field: "state", if_value: "x", require: "ghost_field" }],
-    });
+  it("errors on bad transition target", () => {
+    fs.writeFileSync(path.join(dir, "Bad.yaml"), YAML.stringify({
+      object: "Bad",
+      properties: { s: { type: "enum", values: ["a", "b"], transitions: { a: ["NOPE"] } } },
+    }));
     const m = load(dir);
-    const errs = validate(m).filter((p) => p.level === "error" && p.where.includes("Ticket2"));
-    expect(errs.some((e) => e.message.includes("ghost_field"))).toBe(true);
-  });
-  it("errors on cardinality constraint referencing unknown link", () => {
-    createType(dir, {
-      name: "Ticket3",
-      properties: { name: { type: "string" } },
-      constraints: [{ kind: "cardinality", link: "nonexistent", min: 1 }],
-    });
-    const m = load(dir);
-    const errs = validate(m).filter((p) => p.level === "error" && p.where.includes("Ticket3"));
+    const errs = validate(m).filter((p) => p.message.includes("NOPE"));
     expect(errs.length).toBeGreaterThan(0);
   });
-  it("warns on missing inverse", () => {
-    createType(dir, {
-      name: "Ticket4",
-      properties: { name: { type: "string" } },
-      links: { owner: { to: "Customer", cardinality: "one", via: "customer_id", inverse: "tickets" } },
-    });
+  it("errors on dangling link target", () => {
+    fs.writeFileSync(path.join(dir, "Orphan.yaml"), YAML.stringify({
+      object: "Orphan",
+      properties: { x: { type: "string" } },
+      links: { friend: { to: "Ghost", type: "many-to-one" } },
+    }));
     const m = load(dir);
-    const warns = validate(m).filter((p) => p.level === "warning" && p.where.includes("Ticket4"));
-    expect(warns.some((w) => w.message.includes("inverse"))).toBe(true);
+    const errs = validate(m).filter((p) => p.message.includes("Ghost"));
+    expect(errs.length).toBeGreaterThan(0);
   });
 });

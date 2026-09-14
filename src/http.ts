@@ -54,10 +54,8 @@ export async function serveHttp(root: string, version: string, port: number): Pr
       return json(res, 200, {
         ok: true,
         ontology: model.config.name,
-        types: model.types.size,
+        objects: model.objects.size,
         actions: model.actions.size,
-        connectors: model.connectors.size,
-        pipelines: model.pipelines.size,
       });
     }
 
@@ -101,7 +99,6 @@ export async function serveHttp(root: string, version: string, port: number): Pr
 
   server.listen(port, () => {
     const model = load(root);
-    console.error(`ontolayer HTTP server on :${port}  (POST /mcp · GET /health) serving '${model.config.name}'`);
-    if (model.actions.size) console.error(`  action tools: ${[...model.actions.keys()].join(", ")}`);
+    console.error(`ontolayer HTTP server on :${port}  serving '${model.config.name}' (${model.objects.size} objects, ${model.actions.size} actions)`);
   });
 }
