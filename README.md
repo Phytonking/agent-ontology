@@ -1,148 +1,192 @@
 # ontolayer
 
-**A filesystem-first, agent-editable ontology framework.**
+An agent-editable ontology framework. Define objects as YAML files — properties, links, actions — and the framework gives you typed database tables, validated writes, state machines, git versioning, and an MCP server that any AI agent can connect to.
 
-[![CI](https://github.com/Phytonking/agent-ontology/actions/workflows/ci.yml/badge.svg)](https://github.com/Phytonking/agent-ontology/actions/workflows/ci.yml)
+## How it works
 
-An ontology is a folder of plain markdown files — one per type, one per action. Point any [MCP](https://modelcontextprotocol.io)-capable agent at the folder and it can **read** the ontology to understand your domain, **edit** it to grow it, and **act** through it with validated, effect-driven actions. Every change is a git commit.
+```
+Order.yaml                          →    obj_Order table
+  properties:                             status TEXT
+    status: enum [paid,shipped,refunded]   total REAL
+    total: money                           customer_id TEXT
+  links:
+    placed_by: Customer (many-to-one)
+  actions:
+    issue_refund: ...                →    callable MCP tool
+```
 
-No database required to start. Runs on your laptop. Plugs into any agent framework.
+**One YAML file = one object.** Properties become columns. Links define relationships. Actions become validated, callable tools. Edit the YAML → the database updates.
 
-> **v0.2** — editable-files core + sync-first data layer + ontology teeth (state machines, richer constraints, relationship inference) + M3 actions. See [ROADMAP.md](ROADMAP.md) for what's next.
-
-## Why
-
-LLM agents are probabilistic. Pointed at raw tables and APIs they don't know what an entity *means*, can't follow relationships, and produce invalid results. Existing semantic layers (dbt, LookML) are built for SQL and humans, and are read-only — an agent can't evolve them.
-
-ontolayer gives agents an ontology they can **read, act through, and edit** — with types, constraints, state machines, and relationship inference as guardrails. Neuro-symbolic: keep the probabilistic LLM on symbolic rails.
-
-## Quickstart (60 seconds)
+## Quickstart
 
 ```bash
-npx ontolayer init my-ontology   # scaffold a folder + git + e-commerce example
-npx ontolayer validate my-ontology
-npx ontolayer serve my-ontology  # start MCP endpoint (stdio)
+git clone https://github.com/Phytonking/agent-ontology.git
+cd agent-ontology
+npm install && npm run build
+
+# scaffold an ontology with an e-commerce example
+node dist/cli.js init my-ontology
+
+# or an agent office (agents, tasks, teams, tools, slack objects)
+node dist/cli.js init --template office my-ontology
+
+# check it
+node dist/cli.js validate my-ontology
+
+# serve to any MCP agent (stdio)
+node dist/cli.js serve my-ontology
+
+# or as a network service (HTTP)
+node dist/cli.js serve --http --port 8787 my-ontology
 ```
 
-**Claude Desktop** — add to `claude_desktop_config.json`:
+Requires **Node >= 22.5** (uses built-in `node:sqlite`, zero native deps).
 
-```json
-{
-  "mcpServers": {
-    "ontolayer": {
-      "command": "npx",
-      "args": ["ontolayer", "serve", "/absolute/path/to/my-ontology"]
-    }
-  }
-}
-```
+## Object file syntax
 
-Requires **Node ≥ 22.5** (uses built-in `node:sqlite`).
-
-## What an ontology looks like
-
-```
-my-ontology/
-  ontology.config.yaml
-  README.md
-  types/       Customer.md  Order.md  Product.md  OrderItem.md  SupportRep.md
-  actions/     issue_refund.md
-  .gitignore   (.ontology/ + .env — data and secrets stay out of git)
-```
-
-A type file (`types/Order.md`):
-
-```markdown
----
-type: Order
+```yaml
+object: Order
 keys: [order_no]
 properties:
+  order_no: { type: string, unique: true }
   status:
     type: enum
     values: [paid, shipped, refunded]
     required: true
-    transitions:               # state machine
+    transitions:
       paid: [shipped, refunded]
       shipped: [refunded]
       refunded: []
-  total: { type: money }
+  total: { type: money, min: 0 }
+  customer_id: { type: id }
   tags: { type: string, many: true }
 links:
-  placed_by: { to: Customer, cardinality: one, via: customer_id, inverse: orders }
-  items:     { to: Product, cardinality: many, through: OrderItem, through_from: order_id, through_to: product_id }
+  placed_by:
+    to: Customer
+    type: many-to-one
+    via: customer_id
+  items:
+    to: Product
+    type: many-to-many
+    through: OrderItem
+    through_from: order_id
+    through_to: product_id
+actions:
+  issue_refund:
+    description: Refund this order.
+    inputs:
+      order_id: { type: id, required: true }
+    preconditions:
+      - status in [paid, shipped]
+    effects:
+      - set status = refunded
 constraints:
   - { kind: disjoint, a: Customer, b: SupportRep }
-  - { kind: conditional, if_field: status, if_value: refunded, require: refund_date }
----
-# Order
-An order a customer placed. Refunded at most once. Payout goes to the buyer, never the support rep.
 ```
 
-## MCP tools (18 total)
+## What you get
 
-| Group | Tool | Purpose |
+- **Per-object typed tables** — real columns, real SQL, not JSON blobs
+- **Validated writes** — type checks, enum enforcement, state machine transitions, constraints
+- **Actions as tools** — each action in an object file becomes its own MCP tool
+- **Files = source of truth** — edit `data/Order/1042.yaml` → DB updates; `put()` → file writes back
+- **Branch-aware DB** — `ontology branch experiment` → separate database per git branch
+- **Git versioning** — every edit is a commit; rollback, review, merge, PR
+- **Sync** — incremental, bidirectional, idempotent (oplog + cursor + content hash)
+- **Connectors** — pluggable data ingest with validation; copy `examples/connectors/_template.mjs`
+- **Hooks** — `beforePut` / `afterPut` middleware on every write
+- **Backends** — SQLite (default), Postgres (JSONB + tsvector), S3/R2 blobs
+
+## Link types
+
+| YAML | Relationship | FK location |
 |---|---|---|
-| **Discover** | `list_types` | list all types |
-| | `read_type` | schema + prose doc |
-| | `list_actions` | list all actions |
-| | `read_action` | action definition |
-| **Edit ontology** | `create_type` | add a type (git-committed) |
-| | `add_property` | add a typed field |
-| | `add_link` | add a relationship |
-| | `add_constraint` | add a constraint |
-| | `update_type_doc` | update prose body |
-| | `create_action` | define a new action |
-| | `validate` | coherence check |
-| **Data** | `put` | create/update an instance (validated) |
-| | `get` | fetch one by id |
-| | `query` | filter instances |
-| | `search` | keyword search |
-| | `traverse` | follow a link (1:1 / N:1 / 1:N / N:M) |
-| | `run_action` | execute a validated action |
-| | `sync` | incremental bidirectional sync to a peer |
-
-## Data layer
-
-- **Default:** `node:sqlite` — zero native deps, offline, no config.
-- **Store contract:** `Store`/`Blob` interfaces with `changes`/`apply`/cursor — sync is first-class, not bolted on.
-- **Sync:** incremental, bidirectional, idempotent (oplog cursor, last-write-wins, content-hash no-ops, no echo loops).
-- **Upgrade path:** implement `Store` for Postgres, S3, Snowflake — same tool surface, no code changes.
-
-## Ontology features
-
-- **Types:** properties (typed, required, unique, multi-valued, deprecated), natural keys, single inheritance.
-- **Relationships:** 1:1, N:1, 1:N, N:M (`via`, `inverse`, `through`); characteristics: `transitive`, `symmetric`, `functional`, `inverse_functional`.
-- **State machines:** enum `transitions` block illegal state moves at write time.
-- **Constraints (SHACL-lite):** `disjoint`, `at_most_once`, `cardinality`, `conditional`, `required_together`, `mutually_exclusive`.
-- **Property constraints:** `min`/`max`, regex `pattern`.
-- **Actions:** typed inputs, preconditions, effects — executed only when valid.
-
-## Scopes
-
-- **Individual agent:** local ontology folder (private memory).
-- **Org/shared:** git remote + HTTP MCP server (M4, on the roadmap).
-- **Rule:** write to your own, `propose_to` a shared parent (git PR), everyone pulls merged truth.
+| `type: one-to-one` | 1:1 | `via` on either side |
+| `type: many-to-one` | N:1 | `via` on this record |
+| `type: one-to-many` | 1:N | `via` on the target |
+| `type: many-to-many` | N:M | `through` join object |
 
 ## CLI
 
 ```
-ontology init   <dir>        scaffold new ontology folder
-ontology serve  <dir>        start MCP server (stdio)
-ontology validate <dir>      check coherence
-ontology sync <a> <b>        bidirectional incremental sync
+ontology init [dir]              scaffold a new ontology
+ontology init --template office  scaffold the agent office template
+ontology serve [dir]             start MCP server (stdio)
+ontology serve --http [dir]      start HTTP service
+ontology validate [dir]          check coherence
+ontology objects [dir]           list all objects
+ontology materialize [dir]       sync data files → DB (hash-skip)
+ontology reindex [dir]           wipe + rebuild DB from files
+ontology branch [name]           create/switch branch (separate DB)
+ontology sync <a> <b>            bidirectional sync between ontologies
+ontology doctor [dir]            test backend connections
 ```
 
-## Extending
+## MCP tools
 
-ontolayer ships a contract; the ecosystem extends it. Implement `Store` / `Blob` / `Connector` interfaces to add Postgres, S3, email ingest, etc. See [`spec/FORMAT.md`](spec/FORMAT.md) §"Scope & extension points".
+| Tool | Purpose |
+|---|---|
+| `list_objects` / `read_object` | discover the ontology |
+| `create_object` | add a new object (git-committed) |
+| `add_property` / `add_link` / `add_action` / `add_constraint` | grow an object |
+| `validate` | check coherence |
+| `put` / `get` / `query` / `search` / `traverse` | read + write data |
+| `run_action` | execute any action by name |
+| `sync` | sync with a peer ontology |
+| *+ one tool per action* | e.g. `assign_task`, `issue_refund` — direct callable |
 
-## Links
+## Docker
 
-- Format spec: [`spec/FORMAT.md`](spec/FORMAT.md)
-- Roadmap: [`ROADMAP.md`](ROADMAP.md)
-- Changelog: [`CHANGELOG.md`](CHANGELOG.md)
-- Issues: [github.com/Phytonking/agent-ontology/issues](https://github.com/Phytonking/agent-ontology/issues)
+```bash
+ontology init --template office ./ontology
+docker compose up --build
+# agents → http://localhost:8787/mcp
+# health → http://localhost:8787/health
+```
+
+## Write modes
+
+In `ontology.config.yaml`:
+
+```yaml
+write_mode: bidirectional   # default: put() writes DB + file; edit file → materialize → DB
+write_mode: index_only      # DB only, no file write-back; files are read-only source
+```
+
+## Connectors
+
+Copy `examples/connectors/_template.mjs`, fill in the blanks:
+
+```js
+export default {
+  async sync(ctx) {
+    const items = await fetch(ctx.env("API_URL")).then(r => r.json());
+    for (const item of items) {
+      await ctx.upsert("MyObject", item.id, { name: item.title, status: item.state });
+    }
+    return { connector: "my-source", ingested: items.length, errors: [] };
+  },
+};
+```
+
+See `examples/connectors/` for REST API, Postgres, CSV, webhook, multi-object pipeline, and transform patterns.
+
+## Project structure
+
+```
+my-ontology/
+  ontology.config.yaml          # config (stores, write_mode, hooks)
+  Customer.yaml                 # object definitions (one per file)
+  Order.yaml
+  Task.yaml
+  data/                         # instance data (source of truth, git-tracked)
+    Order/1042.yaml
+    Customer/c1.yaml
+  .ontology/                    # derived DB index (gitignored, per-branch)
+    data-main.db
+    data-experiment.db
+```
 
 ## License
 
-[Apache-2.0](LICENSE). Open core — the framework is free and complete on its own.
+[Apache-2.0](LICENSE)

@@ -2,26 +2,26 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SqliteStore } from "../src/data/sqlite-store.js";
+import { TypedSqliteStore } from "../src/data/typed-sqlite-store.js";
 import { syncBidirectional } from "../src/data/sync.js";
 
 let dir: string;
-let sa: SqliteStore, sb: SqliteStore;
+let sa: TypedSqliteStore, sb: TypedSqliteStore;
+const testTypes = new Map([["X", { name: "X", properties: { v: { type: "string" as const } }, links: {}, constraints: [], keys: [] }]]);
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "store-test-"));
-  sa = new SqliteStore(path.join(dir, "a.db"), "a");
-  sb = new SqliteStore(path.join(dir, "b.db"), "b");
+  sa = new TypedSqliteStore(path.join(dir, "a.db"), "a", testTypes);
+  sb = new TypedSqliteStore(path.join(dir, "b.db"), "b", testTypes);
 });
 afterEach(() => { sa.close(); sb.close(); fs.rmSync(dir, { recursive: true, force: true }); });
 
-describe("sqlite-store CRUD", () => {
+describe("store CRUD", () => {
   it("upserts and gets", async () => {
     const r = await sa.upsert({ type: "X", id: "1", data: { v: "hello" } });
     expect(r._id).toBe("1");
-    const got = await sa.get("X", "1");
-    expect(got?.data.v).toBe("hello");
+    expect((await sa.get("X", "1"))?.data.v).toBe("hello");
   });
-  it("skips write when content unchanged (hash match)", async () => {
+  it("skips write when hash matches", async () => {
     const r1 = await sa.upsert({ type: "X", id: "1", data: { v: "hi" } });
     const r2 = await sa.upsert({ type: "X", id: "1", data: { v: "hi" } });
     expect(r1._version).toBe(r2._version);
@@ -46,33 +46,31 @@ describe("sqlite-store CRUD", () => {
 });
 
 describe("sync", () => {
-  it("syncs new records from a to b", async () => {
+  it("syncs new records", async () => {
     await sa.upsert({ type: "X", id: "1", data: { v: "hi" } });
     const res = await syncBidirectional(sa, sb);
     expect(res.ab.applied).toBe(1);
     expect(await sb.get("X", "1")).toBeTruthy();
   });
-  it("second sync is a no-op (idempotent)", async () => {
+  it("second sync is a no-op", async () => {
     await sa.upsert({ type: "X", id: "1", data: { v: "hi" } });
     await syncBidirectional(sa, sb);
     const res2 = await syncBidirectional(sa, sb);
     expect(res2.ab.applied).toBe(0);
-    // cursor advanced past all changes — nothing to apply or skip
     expect(res2.ab.lastSeq).toBeGreaterThan(0);
   });
-  it("no echo loop on bidirectional sync", async () => {
+  it("no echo loop", async () => {
     await sa.upsert({ type: "X", id: "1", data: { v: "hi" } });
     await syncBidirectional(sa, sb);
     const res3 = await syncBidirectional(sa, sb);
     expect(res3.ba.applied).toBe(0);
   });
-  it("LWW conflict: newer version wins", async () => {
+  it("LWW: newer version wins", async () => {
     await sa.upsert({ type: "X", id: "1", data: { v: "old" } });
     await syncBidirectional(sa, sb);
     await sb.upsert({ type: "X", id: "1", data: { v: "new" } });
     await syncBidirectional(sa, sb);
-    const r = await sa.get("X", "1");
-    expect(r?.data.v).toBe("new");
+    expect((await sa.get("X", "1"))?.data.v).toBe("new");
   });
   it("syncs deletes", async () => {
     await sa.upsert({ type: "X", id: "1", data: { v: "hi" } });

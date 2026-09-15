@@ -1,9 +1,8 @@
 {
   "name": "ontolayer",
-  "version": "0.2.0",
-  "description": "Filesystem-first, agent-editable ontology framework. Run it as a service (Docker/VM); point any MCP agent at a folder of markdown files it reads, edits, and serves data through.",
+  "version": "1.0.0",
+  "description": "Agent-editable ontology framework. One YAML file per object — properties, links, actions. Typed tables, git-versioned, branch-aware DB, MCP server.",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "author": "Avi Agola",
   "repository": {
@@ -20,6 +19,7 @@
   "files": [
     "dist",
     "spec",
+    "examples",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -32,8 +32,7 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "prepublishOnly": "npm run build && npm test"
+    "test:watch": "vitest"
   },
   "keywords": [
     "ontology",
@@ -41,9 +40,7 @@
     "mcp",
     "knowledge-graph",
     "llm",
-    "neuro-symbolic",
     "ai-agent",
-    "semantic-layer",
     "model-context-protocol"
   ],
   "dependencies": {
