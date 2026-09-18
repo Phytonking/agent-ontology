@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import YAML from "yaml";
+import matter from "gray-matter";
 import { init } from "../src/scaffold.js";
 import { load } from "../src/loader.js";
 import { validate } from "../src/validator.js";
@@ -41,7 +41,7 @@ describe("validate", () => {
     expect(errs).toHaveLength(0);
   });
   it("errors on bad transition target", () => {
-    fs.writeFileSync(path.join(dir, "Bad.yaml"), YAML.stringify({
+    fs.writeFileSync(path.join(dir, "Bad.md"), matter.stringify("\n# Bad\n", {
       object: "Bad",
       properties: { s: { type: "enum", values: ["a", "b"], transitions: { a: ["NOPE"] } } },
     }));
@@ -50,7 +50,7 @@ describe("validate", () => {
     expect(errs.length).toBeGreaterThan(0);
   });
   it("errors on dangling link target", () => {
-    fs.writeFileSync(path.join(dir, "Orphan.yaml"), YAML.stringify({
+    fs.writeFileSync(path.join(dir, "Orphan.md"), matter.stringify("\n# Orphan\n", {
       object: "Orphan",
       properties: { x: { type: "string" } },
       links: { friend: { to: "Ghost", type: "many-to-one" } },

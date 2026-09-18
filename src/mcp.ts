@@ -64,8 +64,8 @@ export function buildServer(root: string, version: string, dataset?: Dataset): M
   });
 
   // ---- edit ontology ----
-  server.tool("create_object", "Create a new object file (git-committed).", {
-    name: z.string(), keys: z.array(z.string()).optional(),
+  server.tool("create_object", "Create a new object (.md file with schema + prose, git-committed).", {
+    name: z.string(), description: z.string().optional(), keys: z.array(z.string()).optional(),
     properties: z.record(PropertyDef).optional(), links: z.record(LinkDef).optional(),
     actions: z.record(ActionDef).optional(), constraints: z.array(ConstraintSchema).optional(),
   }, async (args) => { try { return text(onto.createObject(root, args)); } catch (e) { return fail(e); } });
@@ -81,6 +81,9 @@ export function buildServer(root: string, version: string, dataset?: Dataset): M
   });
   server.tool("add_constraint", "Add a constraint to an object.", { object: z.string(), constraint: ConstraintSchema }, async ({ object, constraint }) => {
     try { return text(onto.addConstraint(root, object, constraint)); } catch (e) { return fail(e); }
+  });
+  server.tool("update_object_doc", "Update the prose documentation of an object (schema preserved).", { object: z.string(), doc: z.string() }, async ({ object, doc }) => {
+    try { return text(onto.updateObjectDoc(root, object, doc)); } catch (e) { return fail(e); }
   });
   server.tool("validate", "Validate the whole ontology for coherence.", {}, async () => {
     try { return text(onto.validate(root)); } catch (e) { return fail(e); }

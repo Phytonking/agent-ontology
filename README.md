@@ -15,8 +15,8 @@ ontolayer gives agents a shared, structured map of your domain — types, relati
 ```
 You write:                          You get:
 ─────────────────────               ─────────────────────────────
-Customer.yaml                       obj_Customer table (email, name, ...)
-Order.yaml                          obj_Order table (status, total, ...)
+Customer.md                          obj_Customer table (email, name, ...)
+Order.md                             obj_Order table (status, total, ...)
   status: enum [paid,shipped,...]    → state machine enforcement
   links: placed_by → Customer        → relationship traversal
   actions: issue_refund               → callable MCP tool
@@ -111,9 +111,10 @@ Once connected, agents get these tools:
 
 ## Object file syntax
 
-Every object is one YAML file. Properties, relationships, and actions together.
+Every object is a **markdown file** (`.md`): YAML frontmatter (schema) + a prose body (documentation, meaning, context — readable by agents and humans). Connectors are separate `.yaml`/`.mjs` files in `connectors/`.
 
-```yaml
+```markdown
+---
 object: Order
 properties:
   status:
@@ -149,7 +150,22 @@ actions:
       - status in [paid, shipped]
     effects:
       - set status = refunded
+---
+# Order
+
+An order placed by a customer.
+
+## Rules
+- Refunded at most once
+- Payout goes to the buyer, never the support rep
+
+## State machine
+- `paid` → `shipped` or `refunded`
+- `shipped` → `refunded`
+- `refunded` is terminal
 ```
+
+The frontmatter is the machine-readable schema. The markdown body is the human- and agent-readable meaning — what the object IS, its rules, its examples. Both in one file.
 
 ### Property types
 
@@ -327,15 +343,17 @@ ontology doctor [dir]              test backend connections
 ```
 my-project/
   ontology.config.yaml     # config
-  Customer.yaml            # object definitions (one file per object)
-  Order.yaml
-  Task.yaml
-  data/                    # instance data (git-tracked)
+  Customer.md              # object definitions (.md = schema + prose docs)
+  Order.md
+  Task.md
+  connectors/              # data connectors (.yaml config + .mjs code)
+    slack.yaml
+    slack.mjs
+  data/                    # instance data (.yaml, git-tracked)
     Customer/c1.yaml
     Order/1042.yaml
   .ontology/               # database (gitignored, one per branch)
     data-main.db
-    data-experiment.db
   .env                     # secrets (gitignored)
 ```
 

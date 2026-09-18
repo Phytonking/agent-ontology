@@ -114,6 +114,8 @@ export interface InternalLink {
 export interface ObjectDoc {
   name: string;
   schema: ObjectFileSchema;
+  /** The markdown prose body (documentation, meaning, examples). */
+  body: string;
   file: string;
 }
 

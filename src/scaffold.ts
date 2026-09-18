@@ -1,13 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
+import matter from "gray-matter";
 import YAML from "yaml";
 import { paths } from "./paths.js";
 import { ensureRepo, commit } from "./git.js";
 import { SPEC_VERSION } from "./types.js";
 
+function writeObj(root: string, fm: Record<string, unknown>, body: string): void {
+  const name = fm.object as string;
+  const file = paths(root).objectFile(name);
+  fs.writeFileSync(file, matter.stringify(`\n${body.trim()}\n`, fm));
+  commit(root, [file], `create object ${name}`);
+}
+
 export function init(root: string): void {
   const p = paths(root);
   fs.mkdirSync(path.join(root, "data"), { recursive: true });
+  fs.mkdirSync(p.connectorsDir, { recursive: true });
 
   const name = path.basename(path.resolve(root));
   fs.writeFileSync(p.config, YAML.stringify({ name, version: "0.1.0", spec: SPEC_VERSION }));
@@ -15,8 +24,6 @@ export function init(root: string): void {
 
   ensureRepo(root);
   commit(root, [p.config, path.join(root, ".gitignore")], "init ontology");
-
-  // ---- example objects ----
 
   writeObj(root, {
     object: "Customer",
@@ -28,7 +35,7 @@ export function init(root: string): void {
     links: {
       orders: { to: "Order", type: "one-to-many", via: "customer_id", inverse: "placed_by" },
     },
-  });
+  }, `# Customer\n\nA person who buys from us. Identified by email address.`);
 
   writeObj(root, {
     object: "Product",
@@ -38,7 +45,7 @@ export function init(root: string): void {
       name: { type: "string" },
       price: { type: "money" },
     },
-  });
+  }, `# Product\n\nSomething we sell. Identified by SKU.`);
 
   writeObj(root, {
     object: "OrderItem",
@@ -48,7 +55,7 @@ export function init(root: string): void {
       product_id: { type: "id", required: true },
       qty: { type: "int" },
     },
-  });
+  }, `# OrderItem\n\nJoin object linking an Order to a Product (the line item).`);
 
   writeObj(root, {
     object: "Order",
@@ -75,12 +82,5 @@ export function init(root: string): void {
         effects: ["set status = refunded"],
       },
     },
-  });
-}
-
-function writeObj(root: string, obj: Record<string, unknown>): void {
-  const name = obj.object as string;
-  const file = paths(root).objectFile(name);
-  fs.writeFileSync(file, YAML.stringify(obj));
-  commit(root, [file], `create object ${name}`);
+  }, `# Order\n\nAn order placed by a customer.\n\n## Rules\n- Refunded at most once\n- Payout goes to the buyer, never the support rep\n\n## State machine\n- \`paid\` → \`shipped\` or \`refunded\`\n- \`shipped\` → \`refunded\`\n- \`refunded\` is terminal`);
 }
