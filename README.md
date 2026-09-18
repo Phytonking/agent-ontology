@@ -2,29 +2,31 @@
 
 **Give your AI agents a shared understanding of your world.**
 
-ontolayer is an open-source ontology framework where you define your domain as simple YAML files — one file per object — and the framework turns them into a typed database, a validated API, and a set of tools any AI agent can use.
+ontolayer is an open-source ontology framework. You define your domain as YAML files — one file per object — and get a typed database, validated writes with state machines, and a server that any AI agent can connect to over [MCP](https://modelcontextprotocol.io).
 
-The problem it solves: AI agents are probabilistic. Point them at raw databases and APIs and they don't know what things *mean*, can't follow relationships, and produce invalid results. ontolayer gives agents a structured, editable map of your domain — with types, relationships, state machines, and guardrails — so they can read it, act through it, and grow it.
+## Why
 
-## The idea
+AI agents are probabilistic. Point them at raw databases and APIs and they hallucinate field names, break relationships, and produce invalid state. Every agent integration is bespoke glue.
+
+ontolayer gives agents a shared, structured map of your domain — types, relationships, state machines, and actions — that they can read, query, act through, and even edit. One server, any agent framework, validated guardrails.
+
+## How it works
 
 ```
-Customer.yaml       →    typed database table (obj_Customer)
-  email: string     →    email TEXT column
-  name: string      →    name TEXT column
-
-Order.yaml          →    typed database table (obj_Order)
-  status: enum      →    status TEXT column
-    transitions:    →    state machine (paid → shipped → refunded)
-  links:
-    placed_by:      →    foreign key relationship to Customer
-  actions:
-    issue_refund:   →    callable tool for any connected agent
+You write:                          You get:
+─────────────────────               ─────────────────────────────
+Customer.yaml                       obj_Customer table (email, name, ...)
+Order.yaml                          obj_Order table (status, total, ...)
+  status: enum [paid,shipped,...]    → state machine enforcement
+  links: placed_by → Customer        → relationship traversal
+  actions: issue_refund               → callable MCP tool
 ```
 
-You write YAML. You get: a database with real tables, validated writes that enforce your rules, and an MCP server where every action you defined is a tool an agent can call. Edit a YAML file — the database updates. An agent calls `put()` — the file updates. Git tracks everything.
+One YAML file = one object = one database table. Properties become columns. Actions become tools. Edit a file, the database updates. An agent calls `put()`, the file updates. Git tracks everything.
 
-## Getting started
+---
+
+## Quick start
 
 ```bash
 git clone https://github.com/Phytonking/agent-ontology.git
@@ -33,246 +35,326 @@ npm install
 npm run build
 ```
 
-Requires **Node 22.5+** (uses the built-in `node:sqlite` — no native dependencies to compile).
+Requires **Node 22.5+** (uses built-in `node:sqlite` — zero native deps).
 
-### Create an ontology
+### 1. Create an ontology
 
 ```bash
-# e-commerce example (Customer, Order, Product)
+# e-commerce example
 node dist/cli.js init my-project
 
-# or an agent office (Agent, Task, Team, Tool, Channel, Thread, Message)
+# or an agent office (agents, tasks, teams, tools, channels, threads)
 node dist/cli.js init --template office my-project
 ```
 
-This creates a folder of YAML files. That folder *is* the ontology.
-
-### Validate and serve
+### 2. Validate
 
 ```bash
-node dist/cli.js validate my-project    # check everything is coherent
-node dist/cli.js serve my-project       # start MCP server (stdio)
+node dist/cli.js validate my-project
 ```
 
-Point any MCP-capable agent (Claude, LangGraph, your own) at the serve command. The agent can now read your objects, query data, run actions, and edit the ontology.
+### 3. Serve
 
-## What an object file looks like
+```bash
+# local agent (stdio — same machine, no network)
+node dist/cli.js serve my-project
 
-Every object in your domain is one YAML file. Properties, relationships, and actions live together — because they describe one thing.
+# or as a network server (any agent, any machine)
+node dist/cli.js serve --http --port 8787 my-project
+```
+
+---
+
+## Connecting agents
+
+### Claude Desktop (local, stdio)
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ontolayer": {
+      "command": "node",
+      "args": ["/path/to/agent-ontology/dist/cli.js", "serve", "/path/to/my-project"]
+    }
+  }
+}
+```
+
+### Any MCP client (HTTP, remote)
+
+Start the server:
+
+```bash
+node dist/cli.js serve --http --port 8787 my-project
+```
+
+Connect your agent to `http://your-host:8787/mcp` (MCP Streamable HTTP). Health check at `http://your-host:8787/health`.
+
+Works with any framework that speaks MCP — Claude, LangGraph, custom agents, anything.
+
+### What agents see
+
+Once connected, agents get these tools:
+
+| Tool | What it does |
+|---|---|
+| `list_objects` / `read_object` | discover the domain |
+| `create_object` / `add_property` / `add_link` / `add_action` | edit the ontology (git-committed) |
+| `validate` | check coherence |
+| `put` / `get` / `query` / `search` / `traverse` | read + write data |
+| `run_action` | execute any action |
+| *+ one tool per action* | e.g. `assign_task`, `issue_refund` — call directly |
+
+---
+
+## Object file syntax
+
+Every object is one YAML file. Properties, relationships, and actions together.
 
 ```yaml
-object: Task
+object: Order
 properties:
-  title:
-    type: string
-    required: true
   status:
     type: enum
-    values: [backlog, assigned, in_progress, review, done]
+    values: [paid, shipped, refunded]
     required: true
     transitions:
-      backlog: [assigned]
-      assigned: [in_progress, backlog]
-      in_progress: [review, blocked]
-      review: [done, in_progress]
-      done: []
-  priority:
-    type: enum
-    values: [low, medium, high, urgent]
-  tags:
-    type: string
-    many: true
+      paid: [shipped, refunded]
+      shipped: [refunded]
+      refunded: []
+  total: { type: money, min: 0 }
+  customer_id: { type: id }
+  tags: { type: string, many: true }
+
 links:
-  assigned_to:
-    to: Agent
+  placed_by:
+    to: Customer
     type: many-to-one
-    via: agent_id
-  raised_in:
-    to: Thread
-    type: many-to-one
-    via: thread_id
+    via: customer_id
+  items:
+    to: Product
+    type: many-to-many
+    through: OrderItem
+    through_from: order_id
+    through_to: product_id
+
 actions:
-  assign_task:
-    description: Assign this task to an agent.
+  issue_refund:
+    description: Refund this order. Only if paid or shipped.
     inputs:
-      task_id: { type: id, required: true }
-      agent_id: { type: id, required: true }
+      order_id: { type: id, required: true }
     preconditions:
-      - status in [backlog]
+      - status in [paid, shipped]
     effects:
-      - set status = assigned
-  complete_task:
-    description: Mark this task as done.
-    inputs:
-      task_id: { type: id, required: true }
-    preconditions:
-      - status in [review]
-    effects:
-      - set status = done
+      - set status = refunded
 ```
 
-That file gives you:
-- A `obj_Task` table with `title`, `status`, `priority`, `tags`, `agent_id`, `thread_id` as real columns
-- State machine enforcement: `done → in_progress` is rejected automatically
-- Two MCP tools (`assign_task`, `complete_task`) that agents can call directly
-- Relationship traversal to Agent and Thread
+### Property types
 
-## How data flows
+`string` · `text` · `int` · `float` · `money` · `bool` · `datetime` · `date` · `id` · `json` · `enum`
 
-```
-                    ┌──────────────────────┐
-                    │   YAML object files   │   ← you define these
-                    │   (Order.yaml, etc.)  │
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────▼───────────┐
-                    │   data/ YAML files    │   ← instance data (source of truth)
-                    │   data/Order/1042.yaml │
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────▼───────────┐
-                    │   typed database      │   ← derived index (one table per object)
-                    │   .ontology/data.db   │
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────▼───────────┐
-                    │   MCP server          │   ← agents connect here
-                    │   (stdio or HTTP)     │
-                    └──────────────────────┘
-```
+Optional modifiers: `required` · `unique` · `many` (array) · `min`/`max` · `pattern` · `transitions` (state machine)
 
-**Two-way sync:**
-- Edit `data/Order/1042.yaml` → run `ontology materialize` → database updates
-- Agent calls `put()` via MCP → database updates → file writes back
-- Git tracks every change to both object definitions and instance data
+### Relationship types
 
-## Relationships
-
-| In YAML | Means | Example |
+| In YAML | Meaning | Foreign key |
 |---|---|---|
-| `type: one-to-one` | exactly one on each side | User → Profile |
-| `type: many-to-one` | many of this, one of that | Order → Customer |
-| `type: one-to-many` | one of this, many of that | Customer → Orders |
-| `type: many-to-many` | many on both sides (via a join object) | Order ↔ Product (through OrderItem) |
+| `type: one-to-one` | 1:1 | `via` on either side |
+| `type: many-to-one` | N:1 | `via` on this record |
+| `type: one-to-many` | 1:N | `via` on the target |
+| `type: many-to-many` | N:M | `through` a join object |
 
-## What agents see (MCP tools)
+### Constraints
 
-When you serve an ontology, agents get these tools:
+```yaml
+constraints:
+  - { kind: disjoint, a: Customer, b: SupportRep }
+  - { kind: conditional, if_field: status, if_value: refunded, require: refund_date }
+  - { kind: required_together, fields: [start_date, end_date] }
+  - { kind: mutually_exclusive, fields: [phone, fax] }
+```
 
-**Understand the domain:** `list_objects`, `read_object`
+---
 
-**Edit the ontology:** `create_object`, `add_property`, `add_link`, `add_action`, `add_constraint`, `validate`
+## Data
 
-**Work with data:** `put`, `get`, `query`, `search`, `traverse`
+Instance data lives in `data/<ObjectName>/<id>.yaml`:
 
-**Take action:** `run_action` — plus every action defined in your object files becomes its own named tool (e.g. `assign_task`, `issue_refund`)
+```yaml
+# data/Order/1042.yaml
+_id: "1042"
+status: paid
+total: 4200
+customer_id: c1
+tags:
+  - vip
+  - rush
+```
 
-**Sync:** `sync` (incremental bidirectional sync between ontologies)
+### Files are the source of truth
+
+- Edit `data/Order/1042.yaml` → `ontology materialize` → database updates
+- Agent calls `put()` → database updates → file writes back
+- `ontology reindex` → wipes the DB and rebuilds from files (clean slate)
+
+### Write modes
+
+Set in `ontology.config.yaml`:
+
+```yaml
+write_mode: bidirectional   # default — put() writes DB + file
+write_mode: index_only      # DB is read-only index, files managed externally (git, CI)
+```
+
+---
 
 ## Branching
 
-Each git branch gets its own database. Experiment without touching production data.
+Each git branch gets its own isolated database:
 
 ```bash
-ontology branch experiment       # creates git branch + new empty DB
+ontology branch experiment       # git checkout + new DB
 ontology materialize .           # populate from data files
-# ... test, break things, add objects ...
-ontology branch main             # switch back — main DB is untouched
-git merge experiment             # merge the files
-ontology reindex .               # rebuild main DB with merged schema + data
+# test, break things, add objects...
+ontology branch main             # switch back — main DB untouched
+git merge experiment
+ontology reindex .               # rebuild main DB with merged changes
 ```
 
-## Bringing in data (connectors)
+---
 
-A connector is a small JS module that pulls data from a source and maps it to your objects. Copy the template, fill in the blanks:
+## Hosting as a server
+
+### Option 1: bare Node process
+
+```bash
+node dist/cli.js serve --http --port 8787 my-project
+```
+
+Run it on any VM, VPS, or behind a reverse proxy. That's it — one process, one port. SQLite by default (no external DB needed). Add a process manager (`pm2`, `systemd`) to keep it running.
+
+### Option 2: Docker
+
+```bash
+node dist/cli.js init --template office ./ontology
+docker compose up --build
+```
+
+The included `docker-compose.yml` runs ontolayer + Postgres + MinIO (S3-compatible blob store). Configure via `ontology.config.yaml`:
+
+```yaml
+stores:
+  main: { kind: postgres }     # URL from env: ONTOLAYER_STORE_MAIN_URL
+defaults:
+  store: main
+```
+
+Secrets go in `.env` (gitignored):
+
+```
+ONTOLAYER_STORE_MAIN_URL=postgres://user:pass@host:5432/db
+```
+
+### Health check
+
+```bash
+curl http://localhost:8787/health
+# {"ok":true,"ontology":"my-project","objects":12,"actions":6}
+```
+
+---
+
+## Connectors
+
+A connector pulls data from an external source into your ontology. It's a small `.mjs` file:
 
 ```js
-// connectors/my-source.mjs
+// connectors/my-api.mjs
 export default {
   async sync(ctx) {
-    const res = await fetch(ctx.env("API_URL"), {
+    const items = await fetch(ctx.env("API_URL"), {
       headers: { Authorization: `Bearer ${ctx.env("API_TOKEN")}` },
-    });
-    const items = await res.json();
+    }).then(r => r.json());
+
+    let ingested = 0;
     for (const item of items) {
       await ctx.upsert("Task", item.id, {
         title: item.name,
         status: "backlog",
-        priority: item.priority,
       });
+      ingested++;
     }
-    return { connector: "my-source", ingested: items.length, errors: [] };
+    return { connector: "my-api", ingested, errors: [] };
   },
 };
 ```
 
-Every `ctx.upsert` is validated against your object definition — a connector can't inject bad data.
+Every `ctx.upsert` is validated against the object schema — bad data is rejected with a clear error.
 
-See `examples/connectors/` for patterns: REST API, Postgres, CSV, webhooks, multi-object pipelines, and post-ingest transforms.
+See `examples/connectors/` for complete patterns:
+- `_template.mjs` — copy-paste starter with a checklist
+- `rest-api.mjs` — REST API with auth, pagination, incremental cursor
+- `postgres-table.mjs` — SQL table with incremental sync
+- `csv-file.mjs` — CSV/JSON file import
+- `webhook-receiver.mjs` — event-driven ingest
+- `multi-object-pipeline.mjs` — one source → multiple linked objects
+- `transform-enrich.mjs` — post-ingest enrichment
 
-## Configuration
+---
 
-`ontology.config.yaml` in your ontology folder:
-
-```yaml
-name: my-project
-version: 1.0.0
-spec: "0.3"
-
-# write_mode: bidirectional (default) — put() writes DB + file
-# write_mode: index_only — DB only, files are the read-only source
-
-# Optional: swap the backing store (default is local SQLite)
-# stores:
-#   main: { kind: postgres }       # URL from env: ONTOLAYER_STORE_MAIN_URL
-# defaults:
-#   store: main
-```
-
-## CLI reference
+## CLI
 
 ```
-ontology init [dir]                scaffold a new ontology
-ontology init --template office    agent office template
-ontology serve [dir]               MCP server (stdio, for local agents)
-ontology serve --http [dir]        HTTP service (for remote agents)
+ontology init [dir]                create a new ontology
+ontology init --template office    agent office template (12 objects, 6 actions)
+ontology serve [dir]               MCP server (stdio)
+ontology serve --http [dir]        MCP server (HTTP, default port 8787)
 ontology validate [dir]            check ontology coherence
 ontology objects [dir]             list all objects
-ontology materialize [dir]         sync data files → database
+ontology materialize [dir]         sync data files → database (hash-skip)
 ontology reindex [dir]             wipe + rebuild database from files
 ontology branch [name]             create/switch git branch (separate DB)
-ontology sync <a> <b>              bidirectional sync between ontologies
-ontology doctor [dir]              test configured backend connections
+ontology sync <a> <b>              bidirectional sync between two ontologies
+ontology doctor [dir]              test backend connections
 ```
+
+---
 
 ## Folder structure
 
 ```
 my-project/
-  ontology.config.yaml     # configuration
-  Customer.yaml            # object definitions
+  ontology.config.yaml     # config
+  Customer.yaml            # object definitions (one file per object)
   Order.yaml
   Task.yaml
-  data/                    # instance data (git-tracked, source of truth)
+  data/                    # instance data (git-tracked)
     Customer/c1.yaml
     Order/1042.yaml
-  .ontology/               # database index (gitignored, one per branch)
+  .ontology/               # database (gitignored, one per branch)
     data-main.db
     data-experiment.db
+  .env                     # secrets (gitignored)
 ```
 
-## Running as a service
+---
 
-For shared use (multiple agents connecting over the network), run as an HTTP service:
+## Backends
 
-```bash
-node dist/cli.js serve --http --port 8787 my-project
-# agents connect to http://localhost:8787/mcp
-# health check at http://localhost:8787/health
-```
+| Backend | Use | Config |
+|---|---|---|
+| **SQLite** (default) | local dev, single-agent, zero setup | built-in, no config |
+| **Postgres** | shared/production, full SQL, pgvector-ready | `stores: { main: { kind: postgres } }` |
+| **S3 / Cloudflare R2** | blob storage (attachments, docs) | `blobs: { files: { kind: s3, bucket: ... } }` |
 
-A Dockerfile and docker-compose.yml are included for containerized deployment with Postgres and S3/MinIO. See the files for details — but you don't need Docker to use ontolayer. A local `node dist/cli.js serve` is the normal way to run it.
+Swap backends by changing config — no code changes. Secrets from env (`ONTOLAYER_STORE_MAIN_URL`, etc.).
+
+---
 
 ## License
 
 [Apache-2.0](LICENSE)
+
+Built by [Avi Agola](https://github.com/Phytonking).
